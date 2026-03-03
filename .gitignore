@@ -5,3 +5,4 @@ client/dist/
 server/dist/
 server/.env
 *.log
+WIP/
