@@ -1,0 +1,27 @@
+{
+  "name": "ww-character-server",
+  "version": "0.1.0",
+  "description": "Express backend for Gemini image generation and Tripo orchestration.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@google/genai": "^1.43.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "sharp": "^0.34.4"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.4",
+    "vitest": "^3.2.4"
+  }
+}

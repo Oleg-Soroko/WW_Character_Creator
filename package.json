@@ -1,0 +1,13 @@
+{
+  "name": "ww-character-root",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "start-all": "concurrently --kill-others-on-fail --names server,client --prefix-colors blue,green \"npm --prefix server run dev\" \"npm --prefix client run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

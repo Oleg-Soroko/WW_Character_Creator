@@ -1,0 +1,64 @@
+import { Router } from 'express'
+import { toErrorResponse } from '../utils/errors.js'
+
+export const createTripoRouter = ({ tripoService }) => {
+  const router = Router()
+
+  router.post('/tasks', async (req, res) => {
+    try {
+      const result = await tripoService.createTaskFromViews(req.body?.views)
+      res.json(result)
+    } catch (error) {
+      const { statusCode, body } = toErrorResponse(error)
+      res.status(statusCode).json(body)
+    }
+  })
+
+  router.post('/tasks/front', async (req, res) => {
+    try {
+      const result = await tripoService.createTaskFromFrontView(req.body?.imageDataUrl)
+      res.json(result)
+    } catch (error) {
+      const { statusCode, body } = toErrorResponse(error)
+      res.status(statusCode).json(body)
+    }
+  })
+
+  router.get('/tasks/:taskId', async (req, res) => {
+    try {
+      const summary = await tripoService.getTaskSummary(req.params.taskId)
+      res.json({
+        taskId: summary.taskId,
+        status: summary.status,
+        progress: summary.progress,
+        error: summary.error,
+        outputs: summary.outputs,
+      })
+    } catch (error) {
+      const { statusCode, body } = toErrorResponse(error)
+      res.status(statusCode).json(body)
+    }
+  })
+
+  router.get('/tasks/:taskId/model', async (req, res) => {
+    try {
+      const asset = await tripoService.getModelAsset(req.params.taskId, req.query.variant)
+      const contentType = asset.response.headers.get('content-type') || 'model/gltf-binary'
+      const contentLength = asset.response.headers.get('content-length')
+
+      res.setHeader('Content-Type', contentType)
+      res.setHeader('Content-Disposition', `inline; filename="${req.params.taskId}-${asset.variant}.glb"`)
+      if (contentLength) {
+        res.setHeader('Content-Length', contentLength)
+      }
+
+      const arrayBuffer = await asset.response.arrayBuffer()
+      res.send(Buffer.from(arrayBuffer))
+    } catch (error) {
+      const { statusCode, body } = toErrorResponse(error)
+      res.status(statusCode).json(body)
+    }
+  })
+
+  return router
+}
