@@ -50,7 +50,7 @@ export function ModelViewer({ modelUrl, resetSignal = 0 }) {
     setViewerError('')
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#eff3ee')
+    scene.background = new THREE.Color('#d7dbd6')
 
     const camera = new THREE.PerspectiveCamera(35, container.clientWidth / container.clientHeight, 0.01, 100)
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })

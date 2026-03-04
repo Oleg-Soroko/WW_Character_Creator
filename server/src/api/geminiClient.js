@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai'
 import { AppError, normalizeExternalError } from '../utils/errors.js'
 
-const GEMINI_REQUEST_TIMEOUT_MS = 45000
+const GEMINI_REQUEST_TIMEOUT_MS = 120000
 
 const withTimeout = (promise, timeoutMs, timeoutMessage) =>
   Promise.race([
@@ -72,7 +72,7 @@ export const createGeminiClient = ({ apiKey }) => {
             },
           }),
           GEMINI_REQUEST_TIMEOUT_MS,
-          'Gemini image generation timed out after 45 seconds. Try again or reduce the request complexity.',
+          'Gemini image generation timed out after 120 seconds. Try again or reduce the request complexity.',
         )
 
         return extractInlineImage(response)

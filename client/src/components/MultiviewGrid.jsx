@@ -2,10 +2,33 @@ const VIEW_LABELS = {
   front: 'Front',
   back: 'Back',
   left: 'Left',
-  right: 'Right (Mirrored)',
+  right: 'Right',
 }
 
-export function MultiviewGrid({ views, mode = 'full' }) {
+export function MultiviewGrid({ views, mode = 'full', embedded = false }) {
+  if (embedded) {
+    return (
+      <div className="multiview-grid">
+        {Object.entries(VIEW_LABELS).map(([key, label]) => (
+          <article className="view-card" key={key}>
+            <span className="view-card__label">{label}</span>
+            {views?.[key]?.imageDataUrl ? (
+              <img src={views[key].imageDataUrl} alt={`${label} character view`} />
+            ) : (
+              <div className="empty-state empty-state--compact">
+                <p>
+                  {mode === 'front-only' && key !== 'front'
+                    ? `${label} skipped in front test.`
+                    : `${label} will appear here.`}
+                </p>
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <section className="panel-card panel-card--wide">
       <div className="section-heading">

@@ -529,6 +529,7 @@ function App() {
 
             <TripoJobPanel
               embedded
+              showMeta={false}
               job={tripoJob}
               canCreateModel={hasCompleteTurnaround(multiviewResult?.views)}
               canCreateFrontModel={Boolean(multiviewResult?.views?.front?.imageDataUrl)}
@@ -551,7 +552,11 @@ function App() {
                 <h2>Multiview</h2>
               </div>
             </div>
-            <div className="panel-fill" />
+            <MultiviewGrid
+              views={multiviewResult?.views}
+              mode={multiviewResult?.mode || 'full'}
+              embedded
+            />
           </section>
 
           <section className="panel-card workspace-slot workspace-slot--multiview">
@@ -615,6 +620,42 @@ function App() {
                 onChange={(event) => setMultiviewPrompt(event.target.value)}
               />
             </label>
+            <div className="action-row action-row--compact action-row--dev">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => handleGenerateTurnaround('front-only')}
+                disabled={!portraitResult?.imageDataUrl || turnaroundGenerationMode !== ''}
+              >
+                {turnaroundGenerationMode === 'front-only'
+                  ? 'Generating only front view...'
+                  : 'Generate only front view'}
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => handleGenerateTurnaround('full')}
+                disabled={!portraitResult?.imageDataUrl || turnaroundGenerationMode !== ''}
+              >
+                {turnaroundGenerationMode === 'full'
+                  ? 'Generating multiview...'
+                  : 'Generate Multiview'}
+              </button>
+            </div>
+            <div className="dev-panel__field">
+              <span>Tripo</span>
+              <div className="dev-panel__status">
+                <strong>Task Controls</strong>
+                <p>{tripoJob.outputs?.modelUrl ? 'Auto-rotate enabled' : 'Preview unavailable'}</p>
+                <p>Status: {tripoJob.status}</p>
+                <p>
+                  {tripoJob.taskId
+                    ? `Task ${tripoJob.taskId}${tripoJob.progress ? ` - ${tripoJob.progress}%` : ''}`
+                    : 'No Tripo job has started yet.'}
+                </p>
+                {tripoJob.error ? <p className="error-copy">{tripoJob.error}</p> : null}
+              </div>
+            </div>
           </div>
         </aside>
       ) : null}
