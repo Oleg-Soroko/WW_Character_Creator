@@ -34,7 +34,7 @@ const disposeSceneObject = (object) => {
   })
 }
 
-export function ModelViewer({ modelUrl }) {
+export function ModelViewer({ modelUrl, resetSignal = 0 }) {
   const containerRef = useRef(null)
   const controlsRef = useRef(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -129,22 +129,14 @@ export function ModelViewer({ modelUrl }) {
     }
   }, [modelUrl])
 
+  useEffect(() => {
+    if (resetSignal > 0 && controlsRef.current) {
+      controlsRef.current.reset()
+    }
+  }, [resetSignal])
+
   return (
     <div className="viewer-shell">
-      <div className="viewer-toolbar">
-        <span>{isLoading ? 'Loading textured GLB...' : 'Auto-rotate enabled'}</span>
-        <button
-          type="button"
-          className="ghost-button"
-          onClick={() => {
-            if (controlsRef.current) {
-              controlsRef.current.reset()
-            }
-          }}
-        >
-          Reset View
-        </button>
-      </div>
       <div ref={containerRef} className="viewer-canvas" />
       {viewerError ? <p className="error-copy">{viewerError}</p> : null}
     </div>

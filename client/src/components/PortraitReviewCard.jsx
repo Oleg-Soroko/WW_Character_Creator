@@ -8,14 +8,12 @@ export function PortraitReviewCard({ portraitResult }) {
       {portraitResult ? (
         <div className="portrait-card">
           <img src={portraitResult.imageDataUrl} alt="Generated character portrait" />
-          <div className="meta-stack">
-            <span className="status-pill">{portraitResult.inputMode}</span>
-            <p>{portraitResult.promptUsed}</p>
-          </div>
         </div>
       ) : (
-        <div className="empty-state">
-          <p>The first generated portrait becomes the identity anchor for the turnaround stage.</p>
+        <div className="portrait-card portrait-card--empty">
+          <div className="empty-state empty-state--portrait">
+            <p>The first generated portrait becomes the identity anchor for the turnaround stage.</p>
+          </div>
         </div>
       )}
     </section>

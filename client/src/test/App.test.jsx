@@ -257,6 +257,55 @@ describe('App', () => {
     })
   })
 
+  it('restores rich panel state from local storage immediately on load', async () => {
+    window.localStorage.setItem(
+      'ww-character-session-v1',
+      JSON.stringify({
+        prompt: 'sleek android',
+        multiviewPrompt: 'orthographic prompt',
+        portraitResult: {
+          imageDataUrl: 'data:image/png;base64,cG9ydHJhaXQ=',
+          promptUsed: 'sleek android',
+          inputMode: 'prompt',
+          originalReferenceImageDataUrl: '',
+        },
+        multiviewResult: {
+          mode: 'full',
+          views: {
+            front: { imageDataUrl: 'data:image/png;base64,Zm9v', source: 'gemini' },
+            back: { imageDataUrl: 'data:image/png;base64,YmFy', source: 'gemini' },
+            left: { imageDataUrl: 'data:image/png;base64,YmF6', source: 'gemini' },
+            right: { imageDataUrl: 'data:image/png;base64,cXV4', source: 'mirrored-left' },
+          },
+        },
+        currentRunId: 'run-2',
+        history: [],
+        tripoJob: {
+          taskId: 'task-rich',
+          status: 'success',
+          progress: 100,
+          error: '',
+          outputs: {
+            modelUrl: '/api/tripo/tasks/task-rich/model?variant=pbr_model',
+            downloadUrl: '/api/tripo/tasks/task-rich/model?variant=pbr_model',
+          },
+        },
+      }),
+    )
+
+    render(<App />)
+
+    expect(screen.getByDisplayValue('sleek android')).toBeInTheDocument()
+    expect(screen.getByAltText('Generated character portrait')).toBeInTheDocument()
+    expect(screen.getByText('Front')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('viewer-stub')).toHaveTextContent(
+        '/api/tripo/tasks/task-rich/model?variant=pbr_model',
+      )
+    })
+  })
+
   it('polls Tripo task status from queued to success', async () => {
     generatePortrait.mockResolvedValue({
       imageDataUrl: 'data:image/png;base64,cG9ydHJhaXQ=',

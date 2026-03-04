@@ -6,16 +6,19 @@ export function CharacterPromptForm({
   referenceImage,
   onReferenceImageChange,
   onGeneratePortrait,
-  onReset,
   isGeneratingPortrait,
+  title = 'Identity Portrait',
+  stepLabel = 'Step 01',
 }) {
   return (
     <section className="panel-card">
-      <div className="section-heading">
-        <p className="step-label">Step 01</p>
-        <h2>Identity Portrait</h2>
+      <div className="panel-heading-shell">
+        <div className="section-heading">
+          <p className="step-label">{stepLabel}</p>
+          <h2>{title}</h2>
+        </div>
       </div>
-      <label className="field-label" htmlFor="character-prompt">
+      <label className="visually-hidden" htmlFor="character-prompt">
         Character prompt
       </label>
       <textarea
@@ -28,29 +31,22 @@ export function CharacterPromptForm({
         disabled={isGeneratingPortrait}
       />
 
-      <ReferenceUpload
-        value={referenceImage}
-        disabled={isGeneratingPortrait}
-        onChange={onReferenceImageChange}
-      />
-
-      <div className="action-row">
+      <div className="action-row action-row--portrait">
+        <ReferenceUpload
+          compact
+          value={referenceImage}
+          disabled={isGeneratingPortrait}
+          onChange={onReferenceImageChange}
+        />
         <button
           type="button"
           className="primary-button"
           onClick={onGeneratePortrait}
           disabled={isGeneratingPortrait}
         >
-          {isGeneratingPortrait ? 'Generating Portrait...' : 'Generate Portrait'}
+          {isGeneratingPortrait ? 'Generating...' : 'Generate'}
         </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={onReset}
-          disabled={isGeneratingPortrait}
-        >
-          Reset Session
-        </button>
+        <div className="action-row__spacer" aria-hidden="true" />
       </div>
     </section>
   )

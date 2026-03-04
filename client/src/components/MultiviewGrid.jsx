@@ -13,7 +13,7 @@ export function MultiviewGrid({ views, mode = 'full' }) {
         <h2>Orthographic Set</h2>
       </div>
       {mode === 'front-only' ? (
-        <p className="support-copy">
+        <p className="visually-hidden">
           Front test generated. Run the full turnaround to create back, left, and mirrored right.
         </p>
       ) : null}

@@ -44,11 +44,13 @@ const ModelViewer = lazy(() =>
 
 function App() {
   const [initialSession] = useState(() => loadPersistedSession())
-  const [prompt, setPrompt] = useState('')
+  const [prompt, setPrompt] = useState(() => initialSession?.prompt || '')
   const [referenceImage, setReferenceImage] = useState(null)
-  const [portraitResult, setPortraitResult] = useState(null)
-  const [multiviewPrompt, setMultiviewPrompt] = useState(DEFAULT_MULTIVIEW_PROMPT)
-  const [multiviewResult, setMultiviewResult] = useState(null)
+  const [portraitResult, setPortraitResult] = useState(() => initialSession?.portraitResult || null)
+  const [multiviewPrompt, setMultiviewPrompt] = useState(
+    () => initialSession?.multiviewPrompt || DEFAULT_MULTIVIEW_PROMPT,
+  )
+  const [multiviewResult, setMultiviewResult] = useState(() => initialSession?.multiviewResult || null)
   const [tripoJob, setTripoJob] = useState(() => initialSession?.tripoJob || EMPTY_JOB)
   const [history, setHistory] = useState(() => initialSession?.history || [])
   const [currentRunId, setCurrentRunId] = useState(() => initialSession?.currentRunId || '')
@@ -59,6 +61,7 @@ function App() {
   const [isCreatingFrontModel, setIsCreatingFrontModel] = useState(false)
   const [isRefreshingTripoJob, setIsRefreshingTripoJob] = useState(false)
   const [hasHydratedPersistedSession, setHasHydratedPersistedSession] = useState(false)
+  const [viewerResetSignal, setViewerResetSignal] = useState(0)
 
   const currentPipelineState = error
     ? 'Attention needed'
@@ -103,13 +106,26 @@ function App() {
           return
         }
 
-        setPrompt(session.prompt || '')
-        setMultiviewPrompt(session.multiviewPrompt || DEFAULT_MULTIVIEW_PROMPT)
-        setPortraitResult(session.portraitResult || null)
-        setMultiviewResult(session.multiviewResult || null)
-        setCurrentRunId(session.currentRunId || '')
-        setHistory(session.history || [])
-        setTripoJob(session.tripoJob || EMPTY_JOB)
+        setPrompt((currentPrompt) => session.prompt || currentPrompt)
+        setMultiviewPrompt(
+          (currentMultiviewPrompt) =>
+            session.multiviewPrompt || currentMultiviewPrompt || DEFAULT_MULTIVIEW_PROMPT,
+        )
+        setPortraitResult((currentPortraitResult) =>
+          session.portraitResult?.imageDataUrl ? session.portraitResult : currentPortraitResult,
+        )
+        setMultiviewResult((currentMultiviewResult) =>
+          session.multiviewResult?.views ? session.multiviewResult : currentMultiviewResult,
+        )
+        setCurrentRunId((currentRunIdValue) => session.currentRunId || currentRunIdValue)
+        setHistory((currentHistory) =>
+          Array.isArray(session.history) && session.history.length > 0 ? session.history : currentHistory,
+        )
+        setTripoJob((currentTripoJob) =>
+          session.tripoJob?.taskId || session.tripoJob?.status !== 'idle' || session.tripoJob?.outputs
+            ? session.tripoJob
+            : currentTripoJob,
+        )
       })
       .finally(() => {
         if (!isCancelled) {
@@ -406,6 +422,10 @@ function App() {
     }
   }
 
+  const handleResetView = () => {
+    setViewerResetSignal((signal) => signal + 1)
+  }
+
   return (
     <div className="page-shell">
       <div className="page-backdrop" aria-hidden="true" />
@@ -413,28 +433,23 @@ function App() {
         <header className="status-bar">
           <div className="status-bar__account">
             <span className="status-dot" aria-hidden="true" />
-            <div>
-              <p className="eyebrow">Session</p>
-              <strong>Local workspace</strong>
-            </div>
+            <p className="status-bar__inline">
+              <span className="status-bar__label">Session:</span> Local workspace
+            </p>
           </div>
           <div className="status-bar__message">
-            <p className="eyebrow">Status</p>
-            <p>{currentPipelineState}</p>
+            <p className="status-bar__inline">
+              <span className="status-bar__label">Status:</span> {currentPipelineState}
+            </p>
           </div>
           <div className="status-bar__metric">
-            <p className="eyebrow">Pipeline</p>
-            <strong>{pipelineSummary}</strong>
+            <p className="status-bar__inline">
+              <span className="status-bar__label">Pipeline:</span> {pipelineSummary}
+            </p>
           </div>
         </header>
 
-        {error ? (
-          <section className="error-banner" role="alert">
-            <p>{error}</p>
-          </section>
-        ) : null}
-
-        <section className="workspace-grid">
+        <section className="workspace-grid workspace-grid--skeleton">
           <div className="workspace-slot workspace-slot--prompt">
             <CharacterPromptForm
               prompt={prompt}
@@ -444,22 +459,48 @@ function App() {
               onGeneratePortrait={handleGeneratePortrait}
               onReset={handleReset}
               isGeneratingPortrait={isGeneratingPortrait}
+              title="Prompt"
+              stepLabel="Step 01"
             />
           </div>
 
-          <div className="workspace-slot workspace-slot--portrait">
-            <PortraitReviewCard portraitResult={portraitResult} />
-          </div>
+          <section className="panel-card workspace-slot workspace-slot--portrait">
+            <div className="panel-heading-shell">
+              <div className="section-heading">
+                <p className="step-label">Step 02</p>
+                <h2>Portrait</h2>
+              </div>
+            </div>
+            <div className="panel-fill" />
+          </section>
 
           <section className="workspace-viewer">
-            <div className="workspace-viewer__heading">
+            <div className="panel-heading-shell">
               <div className="section-heading">
-                <p className="step-label">Step 03</p>
-                <h2>3D View</h2>
+                <p className="step-label">Step 05</p>
+                <h2>3D Model</h2>
               </div>
-              <p className="workspace-viewer__caption">
-                Tripo task controls, live task state, and the GLB preview live together here.
-              </p>
+            </div>
+
+            <div className="workspace-viewer__viewport">
+              {tripoJob.outputs?.modelUrl ? (
+                <Suspense
+                  fallback={
+                    <div className="viewer-placeholder">
+                      <p>Loading viewer...</p>
+                    </div>
+                  }
+                >
+                  <ModelViewer
+                    modelUrl={tripoJob.outputs.modelUrl}
+                    resetSignal={viewerResetSignal}
+                  />
+                </Suspense>
+              ) : (
+                <div className="viewer-placeholder">
+                  <p>The textured GLB appears here after Tripo completes.</p>
+                </div>
+              )}
             </div>
 
             <TripoJobPanel
@@ -474,47 +515,31 @@ function App() {
               onCreateFrontModel={handleCreateFrontModel}
               onForcePullResult={handleForcePullResult}
               onDownloadModel={handleDownloadModel}
+              onResetView={handleResetView}
+              hasViewer={Boolean(tripoJob.outputs?.modelUrl)}
             />
-
-            <div className="workspace-viewer__viewport">
-              {tripoJob.outputs?.modelUrl ? (
-                <Suspense
-                  fallback={
-                    <div className="viewer-placeholder">
-                      <p>Loading viewer...</p>
-                    </div>
-                  }
-                >
-                  <ModelViewer modelUrl={tripoJob.outputs.modelUrl} />
-                </Suspense>
-              ) : (
-                <div className="viewer-placeholder">
-                  <p>The textured GLB appears here after Tripo completes.</p>
-                </div>
-              )}
-            </div>
           </section>
 
-          <div className="workspace-slot workspace-slot--turnaround">
-            <MultiviewPromptEditor
-              value={multiviewPrompt}
-              onChange={setMultiviewPrompt}
-              onGenerateFrontTest={() => handleGenerateTurnaround('front-only')}
-              onGenerateTurnaround={() => handleGenerateTurnaround('full')}
-              disabled={!portraitResult || turnaroundGenerationMode !== ''}
-              generationMode={turnaroundGenerationMode}
-            />
-          </div>
+          <section className="panel-card workspace-slot workspace-slot--turnaround">
+            <div className="panel-heading-shell">
+              <div className="section-heading">
+                <p className="step-label">Step 03</p>
+                <h2>Multiview</h2>
+              </div>
+            </div>
+            <div className="panel-fill" />
+          </section>
 
-          <div className="workspace-slot workspace-slot--multiview">
-            <MultiviewGrid
-              views={multiviewResult?.views || null}
-              mode={multiviewResult?.mode || 'full'}
-            />
-          </div>
+          <section className="panel-card workspace-slot workspace-slot--multiview">
+            <div className="panel-heading-shell">
+              <div className="section-heading">
+                <p className="step-label">Step 04</p>
+                <h2>Sprite</h2>
+              </div>
+            </div>
+            <div className="panel-fill" />
+          </section>
         </section>
-
-        <HistoryPanel history={history} />
       </main>
     </div>
   )

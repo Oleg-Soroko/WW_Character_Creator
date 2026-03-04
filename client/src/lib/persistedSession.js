@@ -13,8 +13,8 @@ const normalizeHistoryEntry = (entry) => ({
   createdAt: entry?.createdAt || new Date().toISOString(),
   promptSummary: entry?.promptSummary || 'Recovered run',
   inputMode: entry?.inputMode || 'unknown',
-  portraitUrl: '',
-  multiview: null,
+  portraitUrl: entry?.portraitUrl || '',
+  multiview: entry?.multiview || null,
   tripoTaskId: entry?.tripoTaskId || '',
   tripoStatus: entry?.tripoStatus || 'idle',
   modelUrl: entry?.modelUrl || '',
@@ -102,6 +102,10 @@ export const loadPersistedSession = () => {
 
     const parsed = JSON.parse(rawValue)
     return {
+      prompt: parsed?.prompt || '',
+      multiviewPrompt: parsed?.multiviewPrompt || '',
+      portraitResult: normalizePortraitResult(parsed?.portraitResult),
+      multiviewResult: normalizeMultiviewResult(parsed?.multiviewResult),
       currentRunId: parsed?.currentRunId || '',
       history: Array.isArray(parsed?.history)
         ? parsed.history.map(normalizeHistoryEntry)
@@ -151,6 +155,7 @@ export const savePersistedSession = ({ prompt, multiviewPrompt, portraitResult, 
     return Promise.resolve()
   }
 
+  const richHistory = Array.isArray(history) ? history.slice(0, HISTORY_LIMIT) : []
   const sanitizedHistory = Array.isArray(history)
     ? history.slice(0, HISTORY_LIMIT).map((entry) => ({
         id: entry.id,
@@ -163,13 +168,27 @@ export const savePersistedSession = ({ prompt, multiviewPrompt, portraitResult, 
       }))
     : []
 
-  const payload = {
+  const minimalPayload = {
     currentRunId: currentRunId || '',
     history: sanitizedHistory,
     tripoJob: normalizeTripoJob(tripoJob),
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  const richPayload = {
+    prompt: prompt || '',
+    multiviewPrompt: multiviewPrompt || '',
+    portraitResult: normalizePortraitResult(portraitResult),
+    multiviewResult: normalizeMultiviewResult(multiviewResult),
+    currentRunId: currentRunId || '',
+    history: richHistory,
+    tripoJob: normalizeTripoJob(tripoJob),
+  }
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(richPayload))
+  } catch {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(minimalPayload))
+  }
 
   return runTransaction('readwrite', (store, resolve, reject) => {
     const request = store.put(
