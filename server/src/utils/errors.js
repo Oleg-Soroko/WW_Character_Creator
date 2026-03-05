@@ -47,6 +47,10 @@ const normalizeApiPayloadMessage = (payload) => {
     return 'Gemini quota exceeded for image generation. Check billing or quota for your Google project.'
   }
 
+  if (apiError?.status === 'INTERNAL' || /internal error encountered|internal server error/i.test(rawMessage)) {
+    return 'Gemini internal error encountered. This is usually temporary. Retry generation.'
+  }
+
   return rawMessage
 }
 
@@ -64,6 +68,9 @@ export const normalizeErrorMessage = (error, fallbackMessage = 'Unexpected serve
   }
 
   if (typeof error?.message === 'string' && error.message.trim()) {
+    if (/internal error encountered|internal server error/i.test(error.message)) {
+      return 'Gemini internal error encountered. This is usually temporary. Retry generation.'
+    }
     return error.message.trim()
   }
 

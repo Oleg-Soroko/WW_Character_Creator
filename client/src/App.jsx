@@ -75,6 +75,11 @@ const getDataUrlFileExtension = (dataUrl) => {
   return mimeTypeToExtension(match?.[1] || 'image/png')
 }
 
+const formatModelLabel = (value) => {
+  const trimmed = String(value || '').trim()
+  return trimmed || 'Not generated yet.'
+}
+
 function App() {
   const [initialSession] = useState(() => loadPersistedSession())
   const [prompt, setPrompt] = useState(() => initialSession?.prompt || '')
@@ -307,6 +312,7 @@ function App() {
       const runId = createRunId()
       const nextPortrait = {
         imageDataUrl: result.imageDataUrl,
+        modelUsed: result.modelUsed || '',
         promptUsed: result.promptUsed,
         inputMode: result.inputMode,
         originalReferenceImageDataUrl:
@@ -773,6 +779,17 @@ function App() {
               >
                 {isGeneratingSprite ? 'Generating sprite run...' : 'Generate Sprite Run'}
               </button>
+            </div>
+            <div className="dev-panel__field">
+              <span>Gemini</span>
+              <div className="dev-panel__status">
+                <strong>Model Usage</strong>
+                <p>Portrait: {formatModelLabel(portraitResult?.modelUsed)}</p>
+                <p>Front: {formatModelLabel(multiviewResult?.modelUsage?.front)}</p>
+                <p>Back: {formatModelLabel(multiviewResult?.modelUsage?.back)}</p>
+                <p>Left: {formatModelLabel(multiviewResult?.modelUsage?.left)}</p>
+                <p>Right: {formatModelLabel(multiviewResult?.modelUsage?.right)}</p>
+              </div>
             </div>
             <div className="dev-panel__field">
               <span>Tripo</span>

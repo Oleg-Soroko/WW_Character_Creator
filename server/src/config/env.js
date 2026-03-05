@@ -18,12 +18,19 @@ const parseBoolean = (value, fallback) => {
   return String(value).toLowerCase() === 'true'
 }
 
+const parseList = (value) =>
+  String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
 export const loadEnv = (source = process.env) => {
   const env = {
     port: Number(source.PORT || 5000),
     clientOrigin: source.CLIENT_ORIGIN || 'http://localhost:5173',
     geminiApiKey: source.GEMINI_API_KEY,
     geminiImageModel: source.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image-preview',
+    geminiImageFallbackModels: parseList(source.GEMINI_IMAGE_FALLBACK_MODELS),
     tripoApiKey: source.TRIPO_API_KEY,
     tripoBaseUrl: source.TRIPO_BASE_URL || 'https://api.tripo3d.ai/v2/openapi',
     pixellabApiKey: source.PIXELLAB_API_KEY,

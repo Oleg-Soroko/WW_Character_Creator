@@ -1,9 +1,35 @@
 import sharp from 'sharp'
 
+const GEMINI_CANVAS_SIZE = 1024
+
 export const normalizeForGemini = async (buffer) =>
   sharp(buffer)
     .rotate()
+    .resize(GEMINI_CANVAS_SIZE, GEMINI_CANVAS_SIZE, {
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
     .png()
+    .toBuffer()
+
+export const normalizeReferenceForGemini = async (buffer) =>
+  sharp(buffer)
+    .rotate()
+    .resize(GEMINI_CANVAS_SIZE, GEMINI_CANVAS_SIZE, {
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+    .flatten({
+      background: {
+        r: 242,
+        g: 242,
+        b: 242,
+      },
+    })
+    .jpeg({
+      quality: 82,
+      mozjpeg: true,
+    })
     .toBuffer()
 
 const parseAspectRatio = (value) => {
@@ -55,6 +81,22 @@ export const normalizePortraitToAspectRatio = async (buffer, aspectRatio = '1:1'
     .png()
     .toBuffer()
 }
+
+export const normalizeGeminiOutputSquare = async (buffer) =>
+  sharp(buffer)
+    .rotate()
+    .resize(GEMINI_CANVAS_SIZE, GEMINI_CANVAS_SIZE, {
+      fit: 'contain',
+      position: 'center',
+      background: {
+        r: 242,
+        g: 242,
+        b: 242,
+        alpha: 1,
+      },
+    })
+    .png()
+    .toBuffer()
 
 export const normalizeForTripo = async (buffer) =>
   sharp(buffer)

@@ -36,12 +36,14 @@ export const createApp = (config = loadEnv(), services = {}) => {
     createPortraitService({
       geminiClient,
       geminiModel: config.geminiImageModel,
+      geminiFallbackModels: config.geminiImageFallbackModels,
     })
   const multiviewService =
     services.multiviewService ||
     createMultiviewService({
       geminiClient,
       geminiModel: config.geminiImageModel,
+      geminiFallbackModels: config.geminiImageFallbackModels,
     })
   const tripoService =
     services.tripoService ||

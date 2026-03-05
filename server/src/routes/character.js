@@ -38,6 +38,7 @@ export const createCharacterRouter = ({ portraitService, multiviewService }) => 
 
       res.json({
         imageDataUrl: result.imageDataUrl,
+        modelUsed: result.modelUsed || '',
         promptUsed: result.promptUsed,
         inputMode: result.inputMode,
         normalizedReferenceImageDataUrl: result.normalizedReferenceImageDataUrl,
@@ -77,6 +78,7 @@ export const createCharacterRouter = ({ portraitService, multiviewService }) => 
 
       res.json({
         mode: result.mode,
+        modelUsage: result.modelUsage || null,
         views: {
           front: {
             imageDataUrl: result.views.front.imageDataUrl,

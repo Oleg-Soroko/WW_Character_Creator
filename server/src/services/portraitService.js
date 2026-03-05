@@ -1,6 +1,10 @@
 import { buildPortraitPrompt } from './promptBuilder.js'
 import { imageBufferToDataUrl } from '../utils/dataUrl.js'
-import { normalizeForGemini, normalizePortraitToAspectRatio } from './imageTransformService.js'
+import {
+  normalizeGeminiOutputSquare,
+  normalizeReferenceForGemini,
+  normalizePortraitToAspectRatio,
+} from './imageTransformService.js'
 
 const imagePart = (buffer, mimeType = 'image/png') => ({
   inlineData: {
@@ -9,41 +13,49 @@ const imagePart = (buffer, mimeType = 'image/png') => ({
   },
 })
 
-export const createPortraitService = ({ geminiClient, geminiModel }) => ({
+export const createPortraitService = ({ geminiClient, geminiModel, geminiFallbackModels = [] }) => ({
   async generatePortrait({
     prompt,
     referenceImageBuffer,
     portraitPromptPreset,
     portraitAspectRatio,
   }) {
+    const trimmedPrompt = prompt?.trim() || ''
     const normalizedReference = referenceImageBuffer
-      ? await normalizeForGemini(referenceImageBuffer)
+      ? await normalizeReferenceForGemini(referenceImageBuffer)
       : null
+    const hasReference = Boolean(normalizedReference)
+
     const promptUsed = buildPortraitPrompt({
-      prompt,
-      hasReferenceImage: Boolean(referenceImageBuffer),
+      prompt: trimmedPrompt,
+      hasReferenceImage: hasReference,
       portraitPromptPreset,
       portraitAspectRatio,
     })
-    const parts = [{ text: promptUsed }]
 
-    if (normalizedReference) {
-      parts.push(imagePart(normalizedReference))
+    const parts = []
+
+    if (hasReference) {
+      parts.push(imagePart(normalizedReference, 'image/jpeg'))
     }
+    parts.push({ text: promptUsed })
 
     const generated = await geminiClient.generateImageFromParts({
       parts,
       model: geminiModel,
+      fallbackModels: geminiFallbackModels,
     })
 
-    const normalizedPortraitBuffer = await normalizePortraitToAspectRatio(
+    const aspectNormalizedPortraitBuffer = await normalizePortraitToAspectRatio(
       generated.buffer,
       portraitAspectRatio || '1:1',
     )
+    const normalizedPortraitBuffer = await normalizeGeminiOutputSquare(aspectNormalizedPortraitBuffer)
 
     return {
       imageBuffer: normalizedPortraitBuffer,
       imageDataUrl: imageBufferToDataUrl(normalizedPortraitBuffer, 'image/png'),
+      modelUsed: generated.modelUsed || '',
       promptUsed,
       inputMode:
         prompt?.trim() && referenceImageBuffer
@@ -52,7 +64,7 @@ export const createPortraitService = ({ geminiClient, geminiModel }) => ({
             ? 'prompt'
             : 'image',
       normalizedReferenceImageDataUrl: normalizedReference
-        ? imageBufferToDataUrl(normalizedReference, 'image/png')
+        ? imageBufferToDataUrl(normalizedReference, 'image/jpeg')
         : null,
     }
   },

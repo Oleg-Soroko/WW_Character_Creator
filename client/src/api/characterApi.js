@@ -1,6 +1,10 @@
 const readErrorMessage = async (response) => {
   const jsonResponse = response.clone()
   const textResponse = response.clone()
+  const fallback =
+    response.status >= 500
+      ? `Server error (${response.status}). Check server logs and try again.`
+      : `Request failed with status ${response.status}.`
 
   try {
     const payload = await jsonResponse.json()
@@ -14,11 +18,11 @@ const readErrorMessage = async (response) => {
         return text.trim()
       }
     } catch {
-      return `Request failed with status ${response.status}.`
+      return fallback
     }
   }
 
-  return `Request failed with status ${response.status}.`
+  return fallback
 }
 
 const requestJson = async (url, options) => {

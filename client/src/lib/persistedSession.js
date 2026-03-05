@@ -32,6 +32,7 @@ const normalizePortraitResult = (portraitResult) =>
   portraitResult
     ? {
         imageDataUrl: portraitResult.imageDataUrl || '',
+        modelUsed: portraitResult.modelUsed || '',
         promptUsed: portraitResult.promptUsed || '',
         inputMode: portraitResult.inputMode || 'unknown',
         originalReferenceImageDataUrl: portraitResult.originalReferenceImageDataUrl || '',
@@ -45,6 +46,7 @@ const normalizeMultiviewResult = (multiviewResult) => {
 
   return {
     mode: multiviewResult.mode || 'full',
+    modelUsage: multiviewResult.modelUsage || null,
     views: multiviewResult.views || null,
     promptMetadata: multiviewResult.promptMetadata || null,
   }

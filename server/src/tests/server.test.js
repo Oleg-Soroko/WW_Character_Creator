@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { loadEnv } from '../config/env.js'
 import { createApp } from '../index.js'
 import { mirrorHorizontally } from '../services/imageTransformService.js'
-import { buildViewPrompt, DEFAULT_MULTIVIEW_PROMPT } from '../services/promptBuilder.js'
+import {
+  buildPortraitPrompt,
+  buildViewPrompt,
+  DEFAULT_MULTIVIEW_PROMPT,
+} from '../services/promptBuilder.js'
 import { createSpriteService } from '../services/spriteService.js'
 import { createTripoService } from '../services/tripoService.js'
 import { normalizeErrorMessage } from '../utils/errors.js'
@@ -76,6 +80,19 @@ describe('error normalization', () => {
 })
 
 describe('promptBuilder', () => {
+  it('keeps portrait preset and aspect ratio when prompt+reference are both provided', () => {
+    const prompt = buildPortraitPrompt({
+      prompt: 'keep scar on right cheek',
+      hasReferenceImage: true,
+      portraitPromptPreset: 'Custom preset sentence.',
+      portraitAspectRatio: '3:4',
+    })
+
+    expect(prompt).toContain('Custom preset sentence.')
+    expect(prompt).toContain('Output aspect ratio: 3:4.')
+    expect(prompt).toContain('Apply this direction while preserving identity')
+  })
+
   it('injects the correct view labels', () => {
     expect(
       buildViewPrompt({
@@ -132,6 +149,7 @@ describe('portrait route', () => {
     const portraitService = {
       generatePortrait: vi.fn(async ({ prompt, referenceImageBuffer }) => ({
         imageDataUrl: 'data:image/png;base64,cG9ydHJhaXQ=',
+        modelUsed: 'models/gemini-3.1-flash-image-preview',
         promptUsed: prompt || 'fallback',
         inputMode: prompt?.trim() && referenceImageBuffer ? 'prompt+image' : prompt?.trim() ? 'prompt' : 'image',
         normalizedReferenceImageDataUrl: referenceImageBuffer
@@ -160,6 +178,7 @@ describe('portrait route', () => {
 
     expect(response.status).toBe(200)
     expect(response.body.inputMode).toBe('prompt')
+    expect(response.body.modelUsed).toBe('models/gemini-3.1-flash-image-preview')
     expect(portraitService.generatePortrait).toHaveBeenCalledWith({
       prompt: 'stylized ranger',
       referenceImageBuffer: null,
@@ -219,6 +238,12 @@ describe('multiview route', () => {
           leftPrompt: 'left',
           multiviewPromptBase: DEFAULT_MULTIVIEW_PROMPT,
         },
+        modelUsage: {
+          front: 'models/gemini-3.1-flash-image-preview',
+          back: '',
+          left: '',
+          right: '',
+        },
       })),
     }
     const app = createApp(TEST_CONFIG, {
@@ -242,6 +267,7 @@ describe('multiview route', () => {
 
     expect(response.status).toBe(200)
     expect(response.body.mode).toBe('front-only')
+    expect(response.body.modelUsage.front).toBe('models/gemini-3.1-flash-image-preview')
     expect(multiviewService.generateMultiview).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'front-only',

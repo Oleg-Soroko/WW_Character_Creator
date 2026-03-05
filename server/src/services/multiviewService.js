@@ -1,6 +1,10 @@
 import { buildViewPrompt, normalizeMultiviewPrompt } from './promptBuilder.js'
 import { imageBufferToDataUrl } from '../utils/dataUrl.js'
-import { normalizeForGemini, mirrorHorizontally } from './imageTransformService.js'
+import {
+  normalizeForGemini,
+  normalizeGeminiOutputSquare,
+  mirrorHorizontally,
+} from './imageTransformService.js'
 
 const imagePart = (buffer) => ({
   inlineData: {
@@ -9,7 +13,11 @@ const imagePart = (buffer) => ({
   },
 })
 
-export const createMultiviewService = ({ geminiClient, geminiModel }) => ({
+export const createMultiviewService = ({
+  geminiClient,
+  geminiModel,
+  geminiFallbackModels = [],
+}) => ({
   async generateMultiview({
     portraitBuffer,
     characterPrompt,
@@ -28,18 +36,26 @@ export const createMultiviewService = ({ geminiClient, geminiModel }) => ({
       return geminiClient.generateImageFromParts({
         parts,
         model: geminiModel,
+        fallbackModels: geminiFallbackModels,
       })
     }
 
     const front = await generateView('front')
+    const normalizedFrontBuffer = await normalizeGeminiOutputSquare(front.buffer)
 
     if (mode === 'front-only') {
       return {
         mode,
+        modelUsage: {
+          front: front.modelUsed || '',
+          back: '',
+          left: '',
+          right: '',
+        },
         views: {
           front: {
-            imageBuffer: front.buffer,
-            imageDataUrl: imageBufferToDataUrl(front.buffer, front.mimeType),
+            imageBuffer: normalizedFrontBuffer,
+            imageDataUrl: imageBufferToDataUrl(normalizedFrontBuffer, 'image/png'),
             source: 'gemini',
           },
           back: {
@@ -69,24 +85,32 @@ export const createMultiviewService = ({ geminiClient, geminiModel }) => ({
 
     const back = await generateView('back')
     const left = await generateView('left')
-    const rightBuffer = await mirrorHorizontally(left.buffer)
+    const normalizedBackBuffer = await normalizeGeminiOutputSquare(back.buffer)
+    const normalizedLeftBuffer = await normalizeGeminiOutputSquare(left.buffer)
+    const rightBuffer = await mirrorHorizontally(normalizedLeftBuffer)
 
     return {
       mode,
+      modelUsage: {
+        front: front.modelUsed || '',
+        back: back.modelUsed || '',
+        left: left.modelUsed || '',
+        right: left.modelUsed ? `${left.modelUsed} (mirrored-left)` : '',
+      },
       views: {
         front: {
-          imageBuffer: front.buffer,
-          imageDataUrl: imageBufferToDataUrl(front.buffer, front.mimeType),
+          imageBuffer: normalizedFrontBuffer,
+          imageDataUrl: imageBufferToDataUrl(normalizedFrontBuffer, 'image/png'),
           source: 'gemini',
         },
         back: {
-          imageBuffer: back.buffer,
-          imageDataUrl: imageBufferToDataUrl(back.buffer, back.mimeType),
+          imageBuffer: normalizedBackBuffer,
+          imageDataUrl: imageBufferToDataUrl(normalizedBackBuffer, 'image/png'),
           source: 'gemini',
         },
         left: {
-          imageBuffer: left.buffer,
-          imageDataUrl: imageBufferToDataUrl(left.buffer, left.mimeType),
+          imageBuffer: normalizedLeftBuffer,
+          imageDataUrl: imageBufferToDataUrl(normalizedLeftBuffer, 'image/png'),
           source: 'gemini',
         },
         right: {

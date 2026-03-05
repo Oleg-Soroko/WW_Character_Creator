@@ -7,6 +7,24 @@ const PORTRAIT_FALLBACK =
 const PORTRAIT_PREFIX =
   'Create a stylized game-character identity portrait with torso and head in frame, square 1:1 composition, centered framing, clean studio background, sharp focus, and strong costume readability.'
 
+const PORTRAIT_REFERENCE_PREFIX =
+  'Use the provided reference image as the primary identity and style anchor. Keep the same character identity, costume, colors, and art style. Create a torso-and-head portrait with clean studio background and sharp focus.'
+
+const REFERENCE_DIRECTION_MAX_CHARS = 320
+
+const truncateReferenceDirection = (value) => {
+  const trimmed = value?.trim() || ''
+  if (!trimmed) {
+    return ''
+  }
+
+  if (trimmed.length <= REFERENCE_DIRECTION_MAX_CHARS) {
+    return trimmed
+  }
+
+  return `${trimmed.slice(0, REFERENCE_DIRECTION_MAX_CHARS)}...`
+}
+
 export const buildPortraitPrompt = ({
   prompt,
   hasReferenceImage,
@@ -17,9 +35,11 @@ export const buildPortraitPrompt = ({
   const normalizedAspectRatio = portraitAspectRatio?.trim() || '1:1'
   const preset = portraitPromptPreset?.trim() || PORTRAIT_PREFIX
   const basePrompt = `${preset} Output aspect ratio: ${normalizedAspectRatio}.`
+  const referenceBasePrompt = `${preset} ${PORTRAIT_REFERENCE_PREFIX} Output aspect ratio: ${normalizedAspectRatio}.`
 
   if (trimmedPrompt && hasReferenceImage) {
-    return `${basePrompt} Use this direction: ${trimmedPrompt}`
+    const shortenedDirection = truncateReferenceDirection(trimmedPrompt)
+    return `${referenceBasePrompt} Apply this direction while preserving identity: ${shortenedDirection}`
   }
 
   if (trimmedPrompt) {
@@ -27,7 +47,7 @@ export const buildPortraitPrompt = ({
   }
 
   if (hasReferenceImage) {
-    return `${basePrompt} ${PORTRAIT_FALLBACK}`
+    return `${referenceBasePrompt} ${PORTRAIT_FALLBACK}`
   }
 
   return `${basePrompt} Design a distinctive stylized character portrait.`
