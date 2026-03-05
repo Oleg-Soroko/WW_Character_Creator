@@ -93,6 +93,35 @@ export const createTripoClient = ({ apiKey, baseUrl }) => {
 
       return taskId
     },
+    async createRigTask({
+      originalModelTaskId,
+      outFormat = 'glb',
+      rigType = 'biped',
+      spec = 'mixamo',
+      modelVersion = 'v2.0-20250506',
+    }) {
+      const payload = await request('/task', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'animate_rig',
+          original_model_task_id: originalModelTaskId,
+          out_format: outFormat,
+          rig_type: rigType,
+          spec,
+          model_version: modelVersion,
+        }),
+      })
+
+      const taskId = payload?.data?.task_id
+      if (!taskId) {
+        throw new AppError('Tripo did not return a rig task id.', 502)
+      }
+
+      return taskId
+    },
     async getTask(taskId) {
       const payload = await request(`/task/${taskId}`, { method: 'GET' })
       return payload?.data

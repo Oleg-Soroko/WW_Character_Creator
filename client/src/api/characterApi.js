@@ -89,3 +89,12 @@ export const getTripoTask = async (taskId) =>
   requestJson(`/api/tripo/tasks/${taskId}`, {
     method: 'GET',
   })
+
+export const generateSpriteRun = async (payload) =>
+  requestJson('/api/sprites/run', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })

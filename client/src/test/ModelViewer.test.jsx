@@ -83,6 +83,30 @@ describe('ModelViewer', () => {
           }
         },
         Vector3,
+        Clock: class {
+          getDelta() {
+            return 0
+          }
+        },
+        Skeleton: class {
+          constructor(bones) {
+            this.bones = bones
+          }
+        },
+        AnimationMixer: class {
+          clipAction() {
+            return {
+              reset: vi.fn(() => this),
+              setLoop: vi.fn(() => this),
+              play: vi.fn(),
+            }
+          }
+
+          update = vi.fn()
+          stopAllAction = vi.fn()
+          uncacheRoot = vi.fn()
+        },
+        LoopRepeat: 'LoopRepeat',
         SRGBColorSpace: 'srgb',
         ACESFilmicToneMapping: 'aces',
       }
@@ -116,6 +140,21 @@ describe('ModelViewer', () => {
           })
         }
       },
+    }))
+
+    vi.doMock('three/examples/jsm/loaders/FBXLoader.js', () => ({
+      FBXLoader: class {
+        load(_url, onLoad) {
+          onLoad({
+            animations: [{ name: 'walking' }],
+            traverse: vi.fn(),
+          })
+        }
+      },
+    }))
+
+    vi.doMock('three/examples/jsm/utils/SkeletonUtils.js', () => ({
+      retargetClip: (_target, _source, clip) => clip,
     }))
 
     vi.doMock('three/examples/jsm/environments/RoomEnvironment.js', () => ({

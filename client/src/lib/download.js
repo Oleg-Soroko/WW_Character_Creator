@@ -15,3 +15,12 @@ export const downloadFromUrl = async (url, filename) => {
   document.body.removeChild(link)
   URL.revokeObjectURL(objectUrl)
 }
+
+export const downloadDataUrl = (dataUrl, filename) => {
+  const link = document.createElement('a')
+  link.href = dataUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}

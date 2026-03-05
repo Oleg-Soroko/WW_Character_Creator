@@ -26,12 +26,19 @@ export const loadEnv = (source = process.env) => {
     geminiImageModel: source.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image-preview',
     tripoApiKey: source.TRIPO_API_KEY,
     tripoBaseUrl: source.TRIPO_BASE_URL || 'https://api.tripo3d.ai/v2/openapi',
+    pixellabApiKey: source.PIXELLAB_API_KEY,
+    pixellabBaseUrl: source.PIXELLAB_BASE_URL || 'https://api.pixellab.ai/v1',
     tripoModelVersion: source.TRIPO_MODEL_VERSION || 'v3.1-20260211',
     tripoTexture: parseBoolean(source.TRIPO_TEXTURE, true),
     tripoPbr: parseBoolean(source.TRIPO_PBR, true),
     tripoTextureQuality: source.TRIPO_TEXTURE_QUALITY || 'standard',
     tripoTextureAlignment: source.TRIPO_TEXTURE_ALIGNMENT || 'original_image',
     tripoOrientation: source.TRIPO_ORIENTATION || 'default',
+    tripoRigMixamo: parseBoolean(source.TRIPO_RIG_MIXAMO, true),
+    tripoRigFormat: source.TRIPO_RIG_FORMAT || 'glb',
+    tripoRigType: source.TRIPO_RIG_TYPE || 'biped',
+    tripoRigSpec: source.TRIPO_RIG_SPEC || 'mixamo',
+    tripoRigModelVersion: source.TRIPO_RIG_MODEL_VERSION || 'v2.0-20250506',
   }
 
   const missingKeys = []
@@ -42,6 +49,10 @@ export const loadEnv = (source = process.env) => {
 
   if (!env.tripoApiKey) {
     missingKeys.push('TRIPO_API_KEY')
+  }
+
+  if (!env.pixellabApiKey) {
+    missingKeys.push('PIXELLAB_API_KEY')
   }
 
   if (missingKeys.length > 0) {

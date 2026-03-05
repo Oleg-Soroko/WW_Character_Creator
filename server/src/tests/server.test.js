@@ -5,6 +5,7 @@ import { loadEnv } from '../config/env.js'
 import { createApp } from '../index.js'
 import { mirrorHorizontally } from '../services/imageTransformService.js'
 import { buildViewPrompt, DEFAULT_MULTIVIEW_PROMPT } from '../services/promptBuilder.js'
+import { createSpriteService } from '../services/spriteService.js'
 import { createTripoService } from '../services/tripoService.js'
 import { normalizeErrorMessage } from '../utils/errors.js'
 
@@ -21,6 +22,13 @@ const TEST_CONFIG = {
   tripoTextureQuality: 'standard',
   tripoTextureAlignment: 'original_image',
   tripoOrientation: 'default',
+  tripoRigMixamo: false,
+  tripoRigFormat: 'glb',
+  tripoRigType: 'biped',
+  tripoRigSpec: 'mixamo',
+  tripoRigModelVersion: 'v2.0-20250506',
+  pixellabApiKey: 'pxl_test',
+  pixellabBaseUrl: 'https://api.pixellab.ai/v1',
 }
 
 const noopMultiviewService = {
@@ -34,9 +42,13 @@ const noopTripoService = {
   getModelAsset: vi.fn(),
 }
 
+const noopSpriteService = {
+  generateRunSprites: vi.fn(),
+}
+
 describe('loadEnv', () => {
   it('rejects missing API keys', () => {
-    expect(() => loadEnv({})).toThrow(/GEMINI_API_KEY, TRIPO_API_KEY/)
+    expect(() => loadEnv({})).toThrow(/GEMINI_API_KEY, TRIPO_API_KEY, PIXELLAB_API_KEY/)
   })
 })
 
@@ -134,6 +146,7 @@ describe('portrait route', () => {
         portraitService,
         multiviewService: noopMultiviewService,
         tripoService: noopTripoService,
+        spriteService: noopSpriteService,
       }),
     }
   }
@@ -214,6 +227,7 @@ describe('multiview route', () => {
       },
       multiviewService,
       tripoService: noopTripoService,
+      spriteService: noopSpriteService,
     })
 
     const response = await request(app)
@@ -233,6 +247,158 @@ describe('multiview route', () => {
         mode: 'front-only',
       }),
     )
+  })
+})
+
+describe('sprite route', () => {
+  const makeDataUrl = async (color = { r: 255, g: 255, b: 255 }) => {
+    const buffer = await sharp({
+      create: {
+        width: 2,
+        height: 2,
+        channels: 3,
+        background: color,
+      },
+    })
+      .png()
+      .toBuffer()
+
+    return `data:image/png;base64,${buffer.toString('base64')}`
+  }
+
+  const createSpriteApp = () => {
+    const spriteService = {
+      generateRunSprites: vi.fn(async ({ spriteSize }) => ({
+        animation: 'run',
+        spriteSize,
+        directions: {
+          front: { previewDataUrl: 'data:image/png;base64,Zm9v', source: 'pixellab', frames: { count: 8 } },
+          back: { previewDataUrl: 'data:image/png;base64,YmFy', source: 'pixellab', frames: { count: 8 } },
+          left: { previewDataUrl: 'data:image/png;base64,YmF6', source: 'pixellab', frames: { count: 8 } },
+          right: { previewDataUrl: 'data:image/png;base64,cXV4', source: 'pixellab', frames: { count: 8 } },
+        },
+      })),
+    }
+
+    return {
+      spriteService,
+      app: createApp(TEST_CONFIG, {
+        portraitService: { generatePortrait: vi.fn() },
+        multiviewService: noopMultiviewService,
+        tripoService: noopTripoService,
+        spriteService,
+      }),
+    }
+  }
+
+  it('rejects missing direction views', async () => {
+    const spriteService = createSpriteService({
+      pixellabClient: {
+        estimateSkeleton: vi.fn(),
+        animateWithSkeleton: vi.fn(),
+      },
+    })
+    const app = createApp(TEST_CONFIG, {
+      portraitService: { generatePortrait: vi.fn() },
+      multiviewService: noopMultiviewService,
+      tripoService: noopTripoService,
+      spriteService,
+    })
+
+    const response = await request(app)
+      .post('/api/sprites/run')
+      .send({
+        views: {
+          front: await makeDataUrl(),
+          back: await makeDataUrl(),
+        },
+        spriteSize: 64,
+      })
+
+    expect(response.status).toBe(400)
+    expect(response.body.error).toMatch(/Missing required multiview directions/i)
+  })
+
+  it('accepts valid payload with spriteSize 64', async () => {
+    const { app, spriteService } = createSpriteApp()
+    const viewDataUrl = await makeDataUrl()
+
+    const response = await request(app)
+      .post('/api/sprites/run')
+      .send({
+        views: {
+          front: viewDataUrl,
+          back: viewDataUrl,
+          left: viewDataUrl,
+          right: viewDataUrl,
+        },
+        spriteSize: 64,
+      })
+
+    expect(response.status).toBe(200)
+    expect(response.body.animation).toBe('run')
+    expect(response.body.spriteSize).toBe(64)
+    expect(spriteService.generateRunSprites).toHaveBeenCalledWith(
+      expect.objectContaining({
+        spriteSize: 64,
+      }),
+    )
+  })
+
+  it('accepts valid payload with spriteSize 128', async () => {
+    const { app, spriteService } = createSpriteApp()
+    const viewDataUrl = await makeDataUrl()
+
+    const response = await request(app)
+      .post('/api/sprites/run')
+      .send({
+        views: {
+          front: viewDataUrl,
+          back: viewDataUrl,
+          left: viewDataUrl,
+          right: viewDataUrl,
+        },
+        spriteSize: 128,
+      })
+
+    expect(response.status).toBe(200)
+    expect(response.body.spriteSize).toBe(128)
+    expect(spriteService.generateRunSprites).toHaveBeenCalledWith(
+      expect.objectContaining({
+        spriteSize: 128,
+      }),
+    )
+  })
+
+  it('rejects unsupported sprite size', async () => {
+    const pngDataUrl = await makeDataUrl()
+    const spriteService = createSpriteService({
+      pixellabClient: {
+        estimateSkeleton: vi.fn(),
+        animateWithSkeleton: vi.fn(),
+      },
+    })
+    const app = createApp(TEST_CONFIG, {
+      portraitService: { generatePortrait: vi.fn() },
+      multiviewService: noopMultiviewService,
+      tripoService: noopTripoService,
+      spriteService,
+    })
+
+    const response = await request(app)
+      .post('/api/sprites/run')
+      .send({
+        views: {
+          front: pngDataUrl,
+          back: pngDataUrl,
+          left: pngDataUrl,
+          right: pngDataUrl,
+        },
+        spriteSize: 96,
+      })
+
+    expect(response.status).toBe(400)
+    expect(response.body.error).toMatch(/Sprite size must be either 64 or 128/i)
   })
 })
 
@@ -359,5 +525,162 @@ describe('tripoService', () => {
       modelUrl: '/api/tripo/tasks/task-987/model?variant=model',
       downloadUrl: '/api/tripo/tasks/task-987/model?variant=model',
     })
+  })
+
+  it('starts a Mixamo rig task when base model succeeds and rigging is enabled', async () => {
+    const createRigTask = vi.fn().mockResolvedValue('rig-task-321')
+    const tripoService = createTripoService({
+      tripoClient: {
+        uploadImageBuffer: vi.fn(),
+        createMultiviewTask: vi.fn(),
+        createImageTask: vi.fn(),
+        createRigTask,
+        getTask: vi
+          .fn()
+          .mockResolvedValueOnce({
+            task_id: 'task-base-123',
+            type: 'multiview_to_model',
+            status: 'success',
+            progress: 100,
+            output: {
+              model: 'https://example.com/base.glb',
+            },
+          })
+          .mockResolvedValueOnce({
+            task_id: 'rig-task-321',
+            type: 'animate_rig',
+            status: 'running',
+            progress: 45,
+            output: {},
+          }),
+        fetchRemoteAsset: vi.fn(),
+      },
+      config: {
+        ...TEST_CONFIG,
+        tripoRigMixamo: true,
+      },
+    })
+
+    const summary = await tripoService.getTaskSummary('task-base-123')
+
+    expect(createRigTask).toHaveBeenCalledWith({
+      originalModelTaskId: 'task-base-123',
+      outFormat: 'glb',
+      rigType: 'biped',
+      spec: 'mixamo',
+      modelVersion: 'v2.0-20250506',
+    })
+    expect(summary.taskId).toBe('rig-task-321')
+    expect(summary.status).toBe('running')
+    expect(summary.outputs).toBeNull()
+  })
+
+  it('returns rigged output URLs once Mixamo rig task succeeds', async () => {
+    const createRigTask = vi.fn().mockResolvedValue('rig-task-999')
+    const tripoService = createTripoService({
+      tripoClient: {
+        uploadImageBuffer: vi.fn(),
+        createMultiviewTask: vi.fn(),
+        createImageTask: vi.fn(),
+        createRigTask,
+        getTask: vi
+          .fn()
+          .mockResolvedValueOnce({
+            task_id: 'task-base-999',
+            type: 'multiview_to_model',
+            status: 'success',
+            progress: 100,
+            output: {
+              model: 'https://example.com/base.glb',
+            },
+          })
+          .mockResolvedValueOnce({
+            task_id: 'rig-task-999',
+            type: 'animate_rig',
+            status: 'success',
+            progress: 100,
+            output: {
+              model: 'https://example.com/rigged.glb',
+            },
+          }),
+        fetchRemoteAsset: vi.fn(),
+      },
+      config: {
+        ...TEST_CONFIG,
+        tripoRigMixamo: true,
+      },
+    })
+
+    const summary = await tripoService.getTaskSummary('task-base-999')
+
+    expect(summary.outputs).toEqual({
+      modelUrl: '/api/tripo/tasks/rig-task-999/model?variant=model',
+      downloadUrl: '/api/tripo/tasks/rig-task-999/model?variant=model',
+    })
+  })
+})
+
+describe('spriteService', () => {
+  const makeDataUrl = async () => {
+    const buffer = await sharp({
+      create: {
+        width: 64,
+        height: 64,
+        channels: 4,
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer()
+
+    return `data:image/png;base64,${buffer.toString('base64')}`
+  }
+
+  it('maps direction order as front/back/left/right -> south/north/west/east', async () => {
+    const directionCalls = []
+    const spriteService = createSpriteService({
+      pixellabClient: {
+        estimateSkeleton: vi.fn().mockResolvedValue({
+          keypoints: [
+            { x: 32, y: 10, label: 'nose', z_index: 0 },
+            { x: 26, y: 18, label: 'left_shoulder', z_index: 0 },
+            { x: 38, y: 18, label: 'right_shoulder', z_index: 0 },
+            { x: 24, y: 26, label: 'left_elbow', z_index: 0 },
+            { x: 40, y: 26, label: 'right_elbow', z_index: 0 },
+            { x: 22, y: 32, label: 'left_wrist', z_index: 0 },
+            { x: 42, y: 32, label: 'right_wrist', z_index: 0 },
+            { x: 28, y: 32, label: 'left_hip', z_index: 0 },
+            { x: 36, y: 32, label: 'right_hip', z_index: 0 },
+            { x: 28, y: 44, label: 'left_knee', z_index: 0 },
+            { x: 36, y: 44, label: 'right_knee', z_index: 0 },
+            { x: 28, y: 56, label: 'left_ankle', z_index: 0 },
+            { x: 36, y: 56, label: 'right_ankle', z_index: 0 },
+          ],
+        }),
+        animateWithSkeleton: vi.fn(async (_imageDataUrl, _keyframes, options) => {
+          directionCalls.push(options.direction)
+          return {
+            images: [{ type: 'base64', base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a8LkAAAAASUVORK5CYII=' }],
+          }
+        }),
+      },
+    })
+
+    const pngDataUrl = await makeDataUrl()
+    const result = await spriteService.generateRunSprites({
+      views: {
+        front: pngDataUrl,
+        back: pngDataUrl,
+        left: pngDataUrl,
+        right: pngDataUrl,
+      },
+      spriteSize: 64,
+    })
+
+    expect(directionCalls).toEqual(['south', 'north', 'west', 'east'])
+    expect(result.directions.front.previewDataUrl).toMatch(/^data:image\/png;base64,/)
+    expect(result.directions.back.previewDataUrl).toMatch(/^data:image\/png;base64,/)
+    expect(result.directions.left.previewDataUrl).toMatch(/^data:image\/png;base64,/)
+    expect(result.directions.right.previewDataUrl).toMatch(/^data:image\/png;base64,/)
   })
 })

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { retargetClip } from 'three/examples/jsm/utils/SkeletonUtils.js'
 
 const fitCameraToObject = (camera, controls, object) => {
   const box = new THREE.Box3().setFromObject(object)
@@ -32,6 +34,31 @@ const disposeSceneObject = (object) => {
       child.material.dispose()
     }
   })
+}
+
+const findFirstSkinnedMesh = (object) => {
+  let skinnedMesh = null
+  object.traverse((child) => {
+    if (!skinnedMesh && child.isSkinnedMesh && child.skeleton) {
+      skinnedMesh = child
+    }
+  })
+  return skinnedMesh
+}
+
+const findSourceSkeleton = (object) => {
+  const bones = []
+  object.traverse((child) => {
+    if (child.isBone) {
+      bones.push(child)
+    }
+  })
+
+  if (!bones.length) {
+    return null
+  }
+
+  return new THREE.Skeleton(bones)
 }
 
 export function ModelViewer({ modelUrl, resetSignal = 0 }) {
@@ -84,7 +111,11 @@ export function ModelViewer({ modelUrl, resetSignal = 0 }) {
     controlsRef.current = controls
 
     const loader = new GLTFLoader()
+    const fbxLoader = new FBXLoader()
     let loadedScene = null
+    let mixer = null
+    let targetSkinnedMesh = null
+    const clock = new THREE.Clock()
 
     loader.load(
       modelUrl,
@@ -92,6 +123,51 @@ export function ModelViewer({ modelUrl, resetSignal = 0 }) {
         loadedScene = gltf.scene
         scene.add(loadedScene)
         fitCameraToObject(camera, controls, loadedScene)
+        targetSkinnedMesh = findFirstSkinnedMesh(loadedScene)
+
+        if (targetSkinnedMesh) {
+          fbxLoader.load(
+            '/Walking.fbx',
+            (fbx) => {
+              const sourceClip = fbx.animations?.[0]
+              if (!sourceClip) {
+                setIsLoading(false)
+                return
+              }
+
+              let clipToPlay = sourceClip
+              const sourceSkeleton = findSourceSkeleton(fbx)
+
+              if (sourceSkeleton) {
+                try {
+                  clipToPlay = retargetClip(targetSkinnedMesh, sourceSkeleton, sourceClip, {
+                    getBoneName: (bone) => bone.name,
+                    hip: 'Hips',
+                    preserveBoneMatrix: false,
+                    preserveBonePositions: true,
+                    useTargetMatrix: true,
+                    useFirstFramePosition: true,
+                  })
+                } catch (_error) {
+                  // Fall back to the original clip if retargeting fails.
+                }
+              }
+
+              mixer = new THREE.AnimationMixer(loadedScene)
+              const action = mixer.clipAction(clipToPlay, targetSkinnedMesh)
+              action.reset()
+              action.setLoop(THREE.LoopRepeat, Infinity)
+              action.play()
+              setIsLoading(false)
+            },
+            undefined,
+            () => {
+              setIsLoading(false)
+            },
+          )
+          return
+        }
+
         setIsLoading(false)
       },
       undefined,
@@ -111,6 +187,10 @@ export function ModelViewer({ modelUrl, resetSignal = 0 }) {
 
     renderer.setAnimationLoop(() => {
       controls.update()
+      const delta = clock.getDelta()
+      if (mixer && delta > 0) {
+        mixer.update(Math.min(delta, 0.05))
+      }
       renderer.render(scene, camera)
     })
 
@@ -119,6 +199,12 @@ export function ModelViewer({ modelUrl, resetSignal = 0 }) {
       renderer.setAnimationLoop(null)
       controls.dispose()
       pmremGenerator.dispose()
+      if (mixer) {
+        mixer.stopAllAction()
+        if (loadedScene) {
+          mixer.uncacheRoot(loadedScene)
+        }
+      }
       if (loadedScene) {
         disposeSceneObject(loadedScene)
       }

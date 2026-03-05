@@ -62,6 +62,22 @@ export const normalizeForTripo = async (buffer) =>
     .jpeg({ quality: 92 })
     .toBuffer()
 
+export const normalizeForSprite = async (buffer, spriteSize = 64) =>
+  sharp(buffer)
+    .rotate()
+    .resize(spriteSize, spriteSize, {
+      fit: 'contain',
+      position: 'center',
+      background: {
+        r: 0,
+        g: 0,
+        b: 0,
+        alpha: 0,
+      },
+    })
+    .png()
+    .toBuffer()
+
 export const mirrorHorizontally = async (buffer) =>
   sharp(buffer)
     .flop()

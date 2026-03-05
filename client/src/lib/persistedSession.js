@@ -50,9 +50,22 @@ const normalizeMultiviewResult = (multiviewResult) => {
   }
 }
 
+const normalizeSpriteResult = (spriteResult) => {
+  if (!spriteResult) {
+    return null
+  }
+
+  return {
+    animation: spriteResult.animation || 'run',
+    spriteSize: Number(spriteResult.spriteSize) || 64,
+    directions: spriteResult.directions || null,
+  }
+}
+
 const normalizeDevSettings = (devSettings) => ({
   portraitAspectRatio: devSettings?.portraitAspectRatio || '1:1',
   portraitPromptPreset: devSettings?.portraitPromptPreset || '',
+  spriteSize: Number(devSettings?.spriteSize) || 64,
 })
 
 const openDatabase = () => {
@@ -112,6 +125,7 @@ export const loadPersistedSession = () => {
       devSettings: normalizeDevSettings(parsed?.devSettings),
       portraitResult: normalizePortraitResult(parsed?.portraitResult),
       multiviewResult: normalizeMultiviewResult(parsed?.multiviewResult),
+      spriteResult: normalizeSpriteResult(parsed?.spriteResult),
       currentRunId: parsed?.currentRunId || '',
       history: Array.isArray(parsed?.history)
         ? parsed.history.map(normalizeHistoryEntry)
@@ -142,6 +156,7 @@ export const loadPersistedRichSession = async () => {
       devSettings: normalizeDevSettings(payload.devSettings),
       portraitResult: normalizePortraitResult(payload.portraitResult),
       multiviewResult: normalizeMultiviewResult(payload.multiviewResult),
+      spriteResult: normalizeSpriteResult(payload.spriteResult),
       currentRunId: payload.currentRunId || '',
       history: Array.isArray(payload.history)
         ? payload.history.map((entry) => ({
@@ -163,6 +178,7 @@ export const savePersistedSession = ({
   devSettings,
   portraitResult,
   multiviewResult,
+  spriteResult,
   currentRunId,
   history,
   tripoJob,
@@ -196,6 +212,7 @@ export const savePersistedSession = ({
     devSettings: normalizeDevSettings(devSettings),
     portraitResult: normalizePortraitResult(portraitResult),
     multiviewResult: normalizeMultiviewResult(multiviewResult),
+    spriteResult: normalizeSpriteResult(spriteResult),
     currentRunId: currentRunId || '',
     history: richHistory,
     tripoJob: normalizeTripoJob(tripoJob),
@@ -215,6 +232,7 @@ export const savePersistedSession = ({
         devSettings: normalizeDevSettings(devSettings),
         portraitResult: normalizePortraitResult(portraitResult),
         multiviewResult: normalizeMultiviewResult(multiviewResult),
+        spriteResult: normalizeSpriteResult(spriteResult),
         currentRunId: currentRunId || '',
         history: Array.isArray(history) ? history.slice(0, HISTORY_LIMIT) : [],
         tripoJob: normalizeTripoJob(tripoJob),

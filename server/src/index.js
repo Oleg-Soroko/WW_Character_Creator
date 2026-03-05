@@ -4,12 +4,15 @@ import { fileURLToPath } from 'node:url'
 import { loadEnv } from './config/env.js'
 import { createGeminiClient } from './api/geminiClient.js'
 import { createTripoClient } from './api/tripoClient.js'
+import { createPixellabClient } from './api/pixellabClient.js'
 import { createPortraitService } from './services/portraitService.js'
 import { createMultiviewService } from './services/multiviewService.js'
 import { createTripoService } from './services/tripoService.js'
+import { createSpriteService } from './services/spriteService.js'
 import { createHealthRouter } from './routes/health.js'
 import { createCharacterRouter } from './routes/character.js'
 import { createTripoRouter } from './routes/tripo.js'
+import { createSpriteRouter } from './routes/sprite.js'
 
 export const createApp = (config = loadEnv(), services = {}) => {
   const geminiClient =
@@ -20,6 +23,12 @@ export const createApp = (config = loadEnv(), services = {}) => {
     createTripoClient({
       apiKey: config.tripoApiKey,
       baseUrl: config.tripoBaseUrl,
+    })
+  const pixellabClient =
+    services.pixellabClient ||
+    createPixellabClient({
+      apiKey: config.pixellabApiKey,
+      baseUrl: config.pixellabBaseUrl,
     })
 
   const portraitService =
@@ -40,6 +49,11 @@ export const createApp = (config = loadEnv(), services = {}) => {
       tripoClient,
       config,
     })
+  const spriteService =
+    services.spriteService ||
+    createSpriteService({
+      pixellabClient,
+    })
 
   const app = express()
 
@@ -54,6 +68,7 @@ export const createApp = (config = loadEnv(), services = {}) => {
   app.use('/api/health', createHealthRouter())
   app.use('/api/character', createCharacterRouter({ portraitService, multiviewService }))
   app.use('/api/tripo', createTripoRouter({ tripoService }))
+  app.use('/api/sprites', createSpriteRouter({ spriteService }))
 
   app.use((error, _req, res, _next) => {
     console.error(error)

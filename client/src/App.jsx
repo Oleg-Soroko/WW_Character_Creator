@@ -4,6 +4,7 @@ import {
   createTripoTask,
   generateMultiview,
   generatePortrait,
+  generateSpriteRun,
   getTripoTask,
 } from './api/characterApi'
 import { DEFAULT_MULTIVIEW_PROMPT } from './constants/prompts'
@@ -12,8 +13,9 @@ import { HistoryPanel } from './components/HistoryPanel'
 import { MultiviewGrid } from './components/MultiviewGrid'
 import { MultiviewPromptEditor } from './components/MultiviewPromptEditor'
 import { PortraitReviewCard } from './components/PortraitReviewCard'
+import { SpriteGrid } from './components/SpriteGrid'
 import { TripoJobPanel } from './components/TripoJobPanel'
-import { downloadFromUrl } from './lib/download'
+import { downloadDataUrl, downloadFromUrl } from './lib/download'
 import { createHistoryEntry, createRunId, updateHistoryEntry } from './lib/historyStore'
 import {
   clearPersistedSession,
@@ -47,6 +49,30 @@ const DEV_PRESETS = {
   portraitPreset:
     'Create a stylized game-character identity portrait with torso and head in frame, square 1:1 composition, centered framing, clean studio background, sharp focus, and strong costume readability.',
   multiviewPreset: DEFAULT_MULTIVIEW_PROMPT,
+  spriteSize: 64,
+}
+
+const MULTIVIEW_ORDER = ['front', 'back', 'left', 'right']
+
+const mimeTypeToExtension = (mimeType = 'image/png') => {
+  if (mimeType.includes('jpeg') || mimeType.includes('jpg')) {
+    return 'jpg'
+  }
+
+  if (mimeType.includes('webp')) {
+    return 'webp'
+  }
+
+  if (mimeType.includes('gif')) {
+    return 'gif'
+  }
+
+  return 'png'
+}
+
+const getDataUrlFileExtension = (dataUrl) => {
+  const match = String(dataUrl || '').match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,/)
+  return mimeTypeToExtension(match?.[1] || 'image/png')
 }
 
 function App() {
@@ -57,12 +83,14 @@ function App() {
     portraitAspectRatio: initialSession?.devSettings?.portraitAspectRatio || DEV_PRESETS.portraitAspectRatio,
     portraitPromptPreset:
       initialSession?.devSettings?.portraitPromptPreset || DEV_PRESETS.portraitPreset,
+    spriteSize: Number(initialSession?.devSettings?.spriteSize) || DEV_PRESETS.spriteSize,
   }))
   const [portraitResult, setPortraitResult] = useState(() => initialSession?.portraitResult || null)
   const [multiviewPrompt, setMultiviewPrompt] = useState(
     () => initialSession?.multiviewPrompt || DEFAULT_MULTIVIEW_PROMPT,
   )
   const [multiviewResult, setMultiviewResult] = useState(() => initialSession?.multiviewResult || null)
+  const [spriteResult, setSpriteResult] = useState(() => initialSession?.spriteResult || null)
   const [tripoJob, setTripoJob] = useState(() => initialSession?.tripoJob || EMPTY_JOB)
   const [history, setHistory] = useState(() => initialSession?.history || [])
   const [currentRunId, setCurrentRunId] = useState(() => initialSession?.currentRunId || '')
@@ -71,6 +99,7 @@ function App() {
   const [turnaroundGenerationMode, setTurnaroundGenerationMode] = useState('')
   const [isCreatingModel, setIsCreatingModel] = useState(false)
   const [isCreatingFrontModel, setIsCreatingFrontModel] = useState(false)
+  const [isGeneratingSprite, setIsGeneratingSprite] = useState(false)
   const [isRefreshingTripoJob, setIsRefreshingTripoJob] = useState(false)
   const [hasHydratedPersistedSession, setHasHydratedPersistedSession] = useState(false)
   const [viewerResetSignal, setViewerResetSignal] = useState(0)
@@ -82,8 +111,10 @@ function App() {
       ? 'Generating portrait'
       : turnaroundGenerationMode === 'front-only'
         ? 'Generating front view'
-        : turnaroundGenerationMode === 'full'
-          ? 'Generating turnaround'
+      : turnaroundGenerationMode === 'full'
+        ? 'Generating turnaround'
+        : isGeneratingSprite
+          ? 'Generating sprite run'
           : isCreatingModel
             ? 'Submitting multiview model'
             : isCreatingFrontModel
@@ -130,12 +161,17 @@ function App() {
             session.devSettings?.portraitAspectRatio || currentDevSettings.portraitAspectRatio,
           portraitPromptPreset:
             session.devSettings?.portraitPromptPreset || currentDevSettings.portraitPromptPreset,
+          spriteSize:
+            Number(session.devSettings?.spriteSize) || currentDevSettings.spriteSize,
         }))
         setPortraitResult((currentPortraitResult) =>
           session.portraitResult?.imageDataUrl ? session.portraitResult : currentPortraitResult,
         )
         setMultiviewResult((currentMultiviewResult) =>
           session.multiviewResult?.views ? session.multiviewResult : currentMultiviewResult,
+        )
+        setSpriteResult((currentSpriteResult) =>
+          session.spriteResult?.directions ? session.spriteResult : currentSpriteResult,
         )
         setCurrentRunId((currentRunIdValue) => session.currentRunId || currentRunIdValue)
         setHistory((currentHistory) =>
@@ -169,6 +205,7 @@ function App() {
       devSettings,
       portraitResult,
       multiviewResult,
+      spriteResult,
       currentRunId,
       history,
       tripoJob,
@@ -180,6 +217,7 @@ function App() {
     history,
     multiviewPrompt,
     multiviewResult,
+    spriteResult,
     portraitResult,
     prompt,
     tripoJob,
@@ -256,6 +294,7 @@ function App() {
     setError('')
     setIsGeneratingPortrait(true)
     setMultiviewResult(null)
+    setSpriteResult(null)
     setTripoJob(EMPTY_JOB)
 
     try {
@@ -301,6 +340,7 @@ function App() {
     setError('')
     setTurnaroundGenerationMode(mode)
     setTripoJob(EMPTY_JOB)
+    setSpriteResult(null)
 
     try {
       const result = await generateMultiview({
@@ -323,6 +363,34 @@ function App() {
       setError(requestError.message)
     } finally {
       setTurnaroundGenerationMode('')
+    }
+  }
+
+  const handleGenerateSpriteRun = async () => {
+    if (!hasCompleteTurnaround(multiviewResult?.views)) {
+      setError('Generate full multiview (front, back, left, right) before creating sprite run.')
+      return
+    }
+
+    setError('')
+    setIsGeneratingSprite(true)
+
+    try {
+      const result = await generateSpriteRun({
+        views: {
+          front: multiviewResult.views.front.imageDataUrl,
+          back: multiviewResult.views.back.imageDataUrl,
+          left: multiviewResult.views.left.imageDataUrl,
+          right: multiviewResult.views.right.imageDataUrl,
+        },
+        spriteSize: Number(devSettings.spriteSize) || DEV_PRESETS.spriteSize,
+      })
+
+      setSpriteResult(result)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsGeneratingSprite(false)
     }
   }
 
@@ -413,6 +481,7 @@ function App() {
     setPortraitResult(null)
     setMultiviewPrompt(DEFAULT_MULTIVIEW_PROMPT)
     setMultiviewResult(null)
+    setSpriteResult(null)
     setTripoJob(EMPTY_JOB)
     setCurrentRunId('')
     setError('')
@@ -448,6 +517,36 @@ function App() {
 
   const handleResetView = () => {
     setViewerResetSignal((signal) => signal + 1)
+  }
+
+  const handleDownloadMultiview = async () => {
+    const views = multiviewResult?.views
+
+    if (!views) {
+      setError('No multiview images available to download.')
+      return
+    }
+
+    const readyViews = MULTIVIEW_ORDER
+      .map((direction) => ({
+        direction,
+        dataUrl: views[direction]?.imageDataUrl || '',
+      }))
+      .filter((view) => Boolean(view.dataUrl))
+
+    if (readyViews.length === 0) {
+      setError('No multiview images available to download.')
+      return
+    }
+
+    setError('')
+
+    for (const view of readyViews) {
+      const extension = getDataUrlFileExtension(view.dataUrl)
+      const runSuffix = currentRunId || 'session'
+      downloadDataUrl(view.dataUrl, `multiview-${runSuffix}-${view.direction}.${extension}`)
+      await new Promise((resolve) => window.setTimeout(resolve, 120))
+    }
   }
 
   return (
@@ -566,7 +665,7 @@ function App() {
                 <h2>Sprite</h2>
               </div>
             </div>
-            <div className="panel-fill" />
+            <SpriteGrid directions={spriteResult?.directions} embedded />
           </section>
         </section>
       </main>
@@ -620,6 +719,21 @@ function App() {
                 onChange={(event) => setMultiviewPrompt(event.target.value)}
               />
             </label>
+            <label className="dev-panel__field">
+              <span>Sprite Size</span>
+              <select
+                value={String(devSettings.spriteSize)}
+                onChange={(event) =>
+                  setDevSettings((currentValue) => ({
+                    ...currentValue,
+                    spriteSize: Number(event.target.value),
+                  }))
+                }
+              >
+                <option value="64">64x64</option>
+                <option value="128">128x128</option>
+              </select>
+            </label>
             <div className="action-row action-row--compact action-row--dev">
               <button
                 type="button"
@@ -640,6 +754,24 @@ function App() {
                 {turnaroundGenerationMode === 'full'
                   ? 'Generating multiview...'
                   : 'Generate Multiview'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={handleDownloadMultiview}
+                disabled={!multiviewResult?.views?.front?.imageDataUrl}
+              >
+                Download Multiview
+              </button>
+            </div>
+            <div className="action-row action-row--compact action-row--dev">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleGenerateSpriteRun}
+                disabled={!hasCompleteTurnaround(multiviewResult?.views) || isGeneratingSprite}
+              >
+                {isGeneratingSprite ? 'Generating sprite run...' : 'Generate Sprite Run'}
               </button>
             </div>
             <div className="dev-panel__field">
