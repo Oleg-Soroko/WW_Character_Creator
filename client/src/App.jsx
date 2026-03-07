@@ -163,110 +163,167 @@ const loadImageFromDataUrl = (dataUrl) =>
     image.src = dataUrl
   })
 
-const resizeDataUrlForModelView = (dataUrl, size = MODEL_VIEW_CAPTURE_SIZE) =>
-  new Promise((resolve, reject) => {
-    const image = new Image()
+const buildCanvasFromImage = (image) => {
+  const canvas = document.createElement('canvas')
+  canvas.width = image.naturalWidth || image.width
+  canvas.height = image.naturalHeight || image.height
+  const context = canvas.getContext('2d')
 
-    image.onload = () => {
-      const sourceCanvas = document.createElement('canvas')
-      sourceCanvas.width = image.naturalWidth || image.width
-      sourceCanvas.height = image.naturalHeight || image.height
-      const sourceContext = sourceCanvas.getContext('2d')
+  if (!context) {
+    throw new Error('2D canvas context is unavailable for screenshot scaling.')
+  }
 
-      if (!sourceContext) {
-        reject(new Error('2D canvas context is unavailable for screenshot scaling.'))
-        return
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+  return { canvas, context }
+}
+
+const getOpaquePixelBounds = (context, width, height) => {
+  const pixelData = context.getImageData(0, 0, width, height).data
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const pixelIndex = (y * width + x) * 4
+      if (pixelData[pixelIndex + 3] < MODEL_VIEW_ALPHA_THRESHOLD) {
+        continue
       }
 
-      sourceContext.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height)
-      sourceContext.drawImage(image, 0, 0, sourceCanvas.width, sourceCanvas.height)
-
-      const pixelData = sourceContext.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height).data
-
-      let minX = sourceCanvas.width
-      let minY = sourceCanvas.height
-      let maxX = -1
-      let maxY = -1
-
-      for (let y = 0; y < sourceCanvas.height; y += 1) {
-        for (let x = 0; x < sourceCanvas.width; x += 1) {
-          const pixelIndex = (y * sourceCanvas.width + x) * 4
-          const alpha = pixelData[pixelIndex + 3]
-
-          if (alpha < MODEL_VIEW_ALPHA_THRESHOLD) {
-            continue
-          }
-
-          if (x < minX) {
-            minX = x
-          }
-          if (y < minY) {
-            minY = y
-          }
-          if (x > maxX) {
-            maxX = x
-          }
-          if (y > maxY) {
-            maxY = y
-          }
-        }
+      if (x < minX) {
+        minX = x
       }
-
-      const hasOpaquePixels = maxX >= minX && maxY >= minY
-      const cropX = hasOpaquePixels ? minX : 0
-      const cropY = hasOpaquePixels ? minY : 0
-      const cropWidth = hasOpaquePixels ? maxX - minX + 1 : sourceCanvas.width
-      const cropHeight = hasOpaquePixels ? maxY - minY + 1 : sourceCanvas.height
-      const cropMargin = Math.max(
-        Math.round(Math.max(cropWidth, cropHeight) * MODEL_VIEW_CROP_MARGIN_RATIO),
-        1,
-      )
-      const expandedX = Math.max(0, cropX - cropMargin)
-      const expandedY = Math.max(0, cropY - cropMargin)
-      const expandedRight = Math.min(sourceCanvas.width, cropX + cropWidth + cropMargin)
-      const expandedBottom = Math.min(sourceCanvas.height, cropY + cropHeight + cropMargin)
-      const expandedWidth = Math.max(1, expandedRight - expandedX)
-      const expandedHeight = Math.max(1, expandedBottom - expandedY)
-
-      const outputCanvas = document.createElement('canvas')
-      outputCanvas.width = size
-      outputCanvas.height = size
-      const outputContext = outputCanvas.getContext('2d')
-
-      if (!outputContext) {
-        reject(new Error('2D canvas context is unavailable for screenshot scaling.'))
-        return
+      if (y < minY) {
+        minY = y
       }
+      if (x > maxX) {
+        maxX = x
+      }
+      if (y > maxY) {
+        maxY = y
+      }
+    }
+  }
 
-      const scale = Math.min(size / expandedWidth, size / expandedHeight)
-      const drawWidth = Math.max(1, Math.round(expandedWidth * scale))
-      const drawHeight = Math.max(1, Math.round(expandedHeight * scale))
-      const drawX = Math.round((size - drawWidth) * 0.5)
-      const drawY = Math.round((size - drawHeight) * 0.5)
+  return maxX >= minX && maxY >= minY
+    ? { minX, minY, maxX, maxY }
+    : null
+}
 
-      outputContext.clearRect(0, 0, size, size)
-      outputContext.imageSmoothingEnabled = !MODEL_VIEW_PIXEL_ART_MODE
-      outputContext.drawImage(
-        sourceCanvas,
-        expandedX,
-        expandedY,
-        expandedWidth,
-        expandedHeight,
-        drawX,
-        drawY,
-        drawWidth,
-        drawHeight,
-      )
+const mergeOpaqueBounds = (currentBounds, nextBounds) => {
+  if (!currentBounds) {
+    return nextBounds
+  }
 
-      resolve(outputCanvas.toDataURL('image/png'))
+  if (!nextBounds) {
+    return currentBounds
+  }
+
+  return {
+    minX: Math.min(currentBounds.minX, nextBounds.minX),
+    minY: Math.min(currentBounds.minY, nextBounds.minY),
+    maxX: Math.max(currentBounds.maxX, nextBounds.maxX),
+    maxY: Math.max(currentBounds.maxY, nextBounds.maxY),
+  }
+}
+
+const expandOpaqueBounds = (bounds, width, height) => {
+  const safeBounds = bounds || {
+    minX: 0,
+    minY: 0,
+    maxX: Math.max(width - 1, 0),
+    maxY: Math.max(height - 1, 0),
+  }
+  const cropWidth = Math.max(1, safeBounds.maxX - safeBounds.minX + 1)
+  const cropHeight = Math.max(1, safeBounds.maxY - safeBounds.minY + 1)
+  const cropMargin = Math.max(
+    Math.round(Math.max(cropWidth, cropHeight) * MODEL_VIEW_CROP_MARGIN_RATIO),
+    1,
+  )
+  const expandedX = Math.max(0, safeBounds.minX - cropMargin)
+  const expandedY = Math.max(0, safeBounds.minY - cropMargin)
+  const expandedRight = Math.min(width, safeBounds.maxX + 1 + cropMargin)
+  const expandedBottom = Math.min(height, safeBounds.maxY + 1 + cropMargin)
+
+  return {
+    x: expandedX,
+    y: expandedY,
+    width: Math.max(1, expandedRight - expandedX),
+    height: Math.max(1, expandedBottom - expandedY),
+  }
+}
+
+const resizeFrameSequenceForModelView = async (
+  frameDataUrls,
+  size = MODEL_VIEW_CAPTURE_SIZE,
+) => {
+  const validFrameDataUrls = Array.isArray(frameDataUrls)
+    ? frameDataUrls.filter((frameDataUrl) => Boolean(frameDataUrl))
+    : []
+
+  if (validFrameDataUrls.length === 0) {
+    return []
+  }
+
+  const loadedFrames = await Promise.all(
+    validFrameDataUrls.map(async (frameDataUrl) => {
+      const image = await loadImageFromDataUrl(frameDataUrl)
+      const { canvas, context } = buildCanvasFromImage(image)
+      return {
+        canvas,
+        bounds: getOpaquePixelBounds(context, canvas.width, canvas.height),
+      }
+    }),
+  )
+
+  const baseWidth = loadedFrames[0]?.canvas.width || size
+  const baseHeight = loadedFrames[0]?.canvas.height || size
+  const mergedBounds = loadedFrames.reduce(
+    (currentBounds, frame) => mergeOpaqueBounds(currentBounds, frame.bounds),
+    null,
+  )
+  const cropBounds = expandOpaqueBounds(mergedBounds, baseWidth, baseHeight)
+  const scale = Math.min(size / cropBounds.width, size / cropBounds.height)
+  const drawWidth = Math.max(1, Math.round(cropBounds.width * scale))
+  const drawHeight = Math.max(1, Math.round(cropBounds.height * scale))
+  const drawX = Math.round((size - drawWidth) * 0.5)
+  const drawY = Math.round((size - drawHeight) * 0.5)
+
+  return loadedFrames.map((frame) => {
+    const outputCanvas = document.createElement('canvas')
+    outputCanvas.width = size
+    outputCanvas.height = size
+    const outputContext = outputCanvas.getContext('2d')
+
+    if (!outputContext) {
+      throw new Error('2D canvas context is unavailable for screenshot scaling.')
     }
 
-    image.onerror = () => {
-      reject(new Error('Failed to resize screenshot image.'))
-    }
+    outputContext.clearRect(0, 0, size, size)
+    outputContext.imageSmoothingEnabled = !MODEL_VIEW_PIXEL_ART_MODE
+    outputContext.drawImage(
+      frame.canvas,
+      cropBounds.x,
+      cropBounds.y,
+      cropBounds.width,
+      cropBounds.height,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight,
+    )
 
-    image.src = dataUrl
+    return outputCanvas.toDataURL('image/png')
   })
+}
+
+const resizeDataUrlForModelView = async (dataUrl, size = MODEL_VIEW_CAPTURE_SIZE) => {
+  const resizedFrames = await resizeFrameSequenceForModelView([dataUrl], size)
+  return resizedFrames[0] || ''
+}
 
 const formatModelLabel = (value) => {
   const trimmed = String(value || '').trim()
@@ -393,6 +450,7 @@ function App() {
   const [isDevPanelOpen, setIsDevPanelOpen] = useState(false)
   const [modelViewPack, setModelViewPack] = useState(null)
   const [isCapturingModelViews, setIsCapturingModelViews] = useState(false)
+  const [isCapturingWalkSprites, setIsCapturingWalkSprites] = useState(false)
   const [isBuildingModelViewGif, setIsBuildingModelViewGif] = useState(false)
   const [modelPreviewMode, setModelPreviewMode] = useState('animated')
   const [defaultSpritesCacheKey, setDefaultSpritesCacheKey] = useState(() => Date.now())
@@ -455,6 +513,8 @@ function App() {
         ? 'Generating turnaround'
         : isGeneratingSprite
           ? 'Generating sprite run'
+          : isCapturingWalkSprites
+            ? 'Capturing walk sprites'
           : isCreatingModel
             ? 'Submitting multiview model'
             : isCreatingFrontBackModel
@@ -837,6 +897,78 @@ function App() {
       setError(requestError.message)
     } finally {
       setIsGeneratingSprite(false)
+    }
+  }
+
+  const handleCaptureWalkSprites = async () => {
+    const captureApi = viewerCaptureApiRef.current
+
+    if (!captureApi?.captureAnimatedSpriteDirections) {
+      setError('3D viewer is not ready for animated sprite capture yet.')
+      return
+    }
+
+    if (!activeModelUrl) {
+      setError('Load an animated model before capturing walk sprites.')
+      return
+    }
+
+    setError('')
+    setIsCapturingWalkSprites(true)
+    const captureSize = normalizeSpriteSize(devSettings.spriteSize)
+
+    try {
+      const capturedDirections = await captureApi.captureAnimatedSpriteDirections()
+      const resizedEntries = await Promise.all(
+        MODEL_VIEW_CAPTURE_ORDER.map(async (view) => {
+          const directionCapture = capturedDirections?.[view.key]
+          if (!directionCapture?.frameDataUrls?.length) {
+            return [view.key, null]
+          }
+
+          const resizedFrames = await resizeFrameSequenceForModelView(
+            directionCapture.frameDataUrls,
+            captureSize,
+          )
+
+          return [
+            view.key,
+            {
+              previewDataUrl: resizedFrames[0] || '',
+              frameDataUrls: resizedFrames,
+              delayMs: directionCapture.delayMs,
+              source: 'viewer-walk-capture',
+              frames: {
+                count: resizedFrames.length,
+                format: 'base64-frame-sequence',
+              },
+            },
+          ]
+        }),
+      )
+
+      const nextDirections = Object.fromEntries(
+        resizedEntries.filter((entry) => Boolean(entry[1])),
+      )
+      const fallback360Direction =
+        activeSpriteDirections?.view_360 || buildDefaultSpriteDirections(defaultSpritesCacheKey).view_360
+
+      setDevSettings((currentValue) => ({
+        ...currentValue,
+        defaultSpritesEnabled: false,
+      }))
+      setSpriteResult({
+        animation: 'walk',
+        spriteSize: captureSize,
+        directions: {
+          ...(fallback360Direction ? { view_360: fallback360Direction } : {}),
+          ...nextDirections,
+        },
+      })
+    } catch (requestError) {
+      setError(requestError?.message || 'Failed to capture animated walk sprites.')
+    } finally {
+      setIsCapturingWalkSprites(false)
     }
   }
 
@@ -1615,6 +1747,16 @@ function App() {
                 disabled={!devSettings.defaultSpritesEnabled}
               >
                 Refresh Default Sprites
+              </button>
+            </div>
+            <div className="action-row action-row--compact action-row--dev">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleCaptureWalkSprites}
+                disabled={!activeModelUrl || isCapturingWalkSprites}
+              >
+                {isCapturingWalkSprites ? 'Capturing Walk Sprites...' : 'Capture Walk Sprites'}
               </button>
             </div>
             <div className="dev-panel__field">

@@ -17,6 +17,10 @@ const VIEW_CAPTURE_PRESETS = [
   { key: 'front_left', label: 'Front_Left', yawDeg: 45 },
 ]
 
+const ANIMATED_SPRITE_CAPTURE_FOV = 24
+const ANIMATED_SPRITE_CAPTURE_FRAME_COUNT = 16
+const ANIMATED_SPRITE_FRAME_DELAY_MS = 90
+
 const buildFloorGrid = (object) => {
   const box = new THREE.Box3().setFromObject(object)
   const size = box.getSize(new THREE.Vector3())
@@ -216,6 +220,7 @@ export function ModelViewer({ modelUrl, resetSignal = 0, onCaptureApiReady = nul
     let mixer = null
     let floorGrid = null
     let targetSkinnedMesh = null
+    let activeAnimationDuration = 0
     const clock = new THREE.Clock()
     const worldUp = new THREE.Vector3(0, 1, 0)
 
@@ -280,8 +285,90 @@ export function ModelViewer({ modelUrl, resetSignal = 0, onCaptureApiReady = nul
       return screenshots
     }
 
+    const captureAnimatedSpriteDirections = async ({
+      frameCount = ANIMATED_SPRITE_CAPTURE_FRAME_COUNT,
+      captureFov = ANIMATED_SPRITE_CAPTURE_FOV,
+    } = {}) => {
+      if (!loadedScene || !hasLoadedModel) {
+        throw new Error('3D model is still loading. Try again in a moment.')
+      }
+
+      if (!mixer || activeAnimationDuration <= 0) {
+        throw new Error('Animated sprite capture requires a loaded animation.')
+      }
+
+      const resolvedFrameCount = Math.max(Math.round(Number(frameCount) || 0), 2)
+      const originalTarget = controls.target.clone()
+      const originalPosition = camera.position.clone()
+      const originalQuaternion = camera.quaternion.clone()
+      const originalBackground = scene.background
+      const originalGridVisibility = floorGrid?.visible ?? false
+      const originalFov = camera.fov
+      const originalMixerTime = mixer.time
+      const sprites = {}
+
+      isCapturingSnapshotsRef.current = true
+      try {
+        scene.background = null
+        if (floorGrid) {
+          floorGrid.visible = false
+        }
+
+        camera.fov = captureFov
+        camera.updateProjectionMatrix()
+        const { center: captureTarget, horizontalDistance, verticalOffset } = getCaptureFraming(
+          camera,
+          loadedScene,
+        )
+        const baseHorizontal = new THREE.Vector3(1, 0, 0)
+
+        for (const preset of VIEW_CAPTURE_PRESETS) {
+          const direction = baseHorizontal
+            .clone()
+            .applyAxisAngle(worldUp, THREE.MathUtils.degToRad(preset.yawDeg))
+            .normalize()
+
+          camera.position.copy(captureTarget).addScaledVector(direction, horizontalDistance)
+          camera.position.y = captureTarget.y + verticalOffset
+          camera.lookAt(captureTarget)
+          controls.target.copy(captureTarget)
+          controls.update()
+
+          const frameDataUrls = []
+          for (let frameIndex = 0; frameIndex < resolvedFrameCount; frameIndex += 1) {
+            const normalizedProgress = frameIndex / resolvedFrameCount
+            mixer.setTime(activeAnimationDuration * normalizedProgress)
+            renderer.render(scene, camera)
+            frameDataUrls.push(renderer.domElement.toDataURL('image/png'))
+          }
+
+          sprites[preset.key] = {
+            label: preset.label,
+            frameDataUrls,
+            delayMs: ANIMATED_SPRITE_FRAME_DELAY_MS,
+          }
+        }
+      } finally {
+        mixer.setTime(originalMixerTime)
+        scene.background = originalBackground
+        if (floorGrid) {
+          floorGrid.visible = originalGridVisibility
+        }
+        camera.fov = originalFov
+        camera.updateProjectionMatrix()
+        camera.position.copy(originalPosition)
+        camera.quaternion.copy(originalQuaternion)
+        controls.target.copy(originalTarget)
+        controls.update()
+        renderer.render(scene, camera)
+        isCapturingSnapshotsRef.current = false
+      }
+
+      return sprites
+    }
+
     if (typeof onCaptureApiReady === 'function') {
-      onCaptureApiReady({ captureEightViews })
+      onCaptureApiReady({ captureEightViews, captureAnimatedSpriteDirections })
     }
 
     loader.load(
@@ -297,6 +384,7 @@ export function ModelViewer({ modelUrl, resetSignal = 0, onCaptureApiReady = nul
         const embeddedClip = chooseIdleLikeClip(gltf.animations || [])
 
         if (embeddedClip) {
+          activeAnimationDuration = embeddedClip.duration || 0
           mixer = new THREE.AnimationMixer(loadedScene)
           const action = mixer.clipAction(embeddedClip)
           action.reset()
@@ -335,6 +423,7 @@ export function ModelViewer({ modelUrl, resetSignal = 0, onCaptureApiReady = nul
               }
 
               mixer = new THREE.AnimationMixer(loadedScene)
+              activeAnimationDuration = clipToPlay?.duration || sourceClip?.duration || 0
               const action = mixer.clipAction(clipToPlay, targetSkinnedMesh)
               action.reset()
               action.setLoop(THREE.LoopRepeat, Infinity)
