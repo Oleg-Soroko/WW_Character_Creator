@@ -103,8 +103,6 @@ const DEFAULT_SPRITE_FILES = {
 }
 const DEFAULT_PROGRESS_BOUNDARIES = Object.freeze([0.2, 0.34, 0.8, 1])
 const PIPELINE_POLL_INTERVAL_MS = 3000
-const MODEL_CHAIN_STAGE_DELAY_MS = 3000
-const PIPELINE_POLL_MAX_ATTEMPTS = 120
 const SPRITE_REQUIRED_KEYS = Object.freeze([
   'view_360',
   ...MODEL_VIEW_CAPTURE_ORDER.map((view) => view.key),
@@ -138,6 +136,38 @@ const SPRITE_DIRECTION_ALIASES = Object.freeze({
 const createInitialPipelineState = () => ({
   unlocked: { ...PIPELINE_INITIAL_STATE.unlocked },
   approved: { ...PIPELINE_INITIAL_STATE.approved },
+})
+
+const STEP03_TASK_INITIAL_STATE = Object.freeze({
+  modelTaskId: '',
+  rigTaskId: '',
+  animateTaskId: '',
+})
+
+const createInitialStep03TaskState = () => ({
+  ...STEP03_TASK_INITIAL_STATE,
+})
+
+const TASK_TIMING_STAGE_ORDER = Object.freeze([
+  'portrait',
+  'multiview',
+  'generate3d',
+  'autorig',
+  'animate',
+  'generate25d',
+])
+
+const TASK_TIMING_INITIAL_STATE = Object.freeze({
+  portrait: null,
+  multiview: null,
+  generate3d: null,
+  autorig: null,
+  animate: null,
+  generate25d: null,
+})
+
+const createInitialTaskTimingState = () => ({
+  ...TASK_TIMING_INITIAL_STATE,
 })
 
 const appendCacheBust = (url, cacheKey) => {
@@ -379,6 +409,15 @@ const formatModelLabel = (value) => {
   return trimmed || 'Not generated yet.'
 }
 
+const formatTimingMetric = (metric) => {
+  if (!metric || !Number.isFinite(metric.durationMs)) {
+    return '-'
+  }
+
+  const seconds = (Math.max(0, metric.durationMs) / 1000).toFixed(1)
+  return metric.status === 'failed' ? `${seconds}s (failed)` : `${seconds}s`
+}
+
 const sanitizeProviderNames = (value) =>
   String(value || '')
     .replace(/tripo/gi, '3D service')
@@ -453,12 +492,65 @@ const normalizePipelineState = (value) => {
   }
 }
 
+const normalizeStep03TaskState = (value) => ({
+  modelTaskId: String(value?.modelTaskId || '').trim(),
+  rigTaskId: String(value?.rigTaskId || '').trim(),
+  animateTaskId: String(value?.animateTaskId || '').trim(),
+})
+
+const hasUsableModelOutput = (job) =>
+  Boolean(
+    job?.outputs?.modelUrl ||
+      job?.outputs?.downloadUrl ||
+      (job?.outputs?.variants && Object.keys(job.outputs.variants).length > 0),
+  )
+
+const getNormalizedTaskType = (value) => String(value || '').trim().toLowerCase()
+
+const mergeStep03TaskStateWithJob = (currentState, nextJob) => {
+  const normalizedState = normalizeStep03TaskState(currentState)
+  if (!nextJob?.taskId || nextJob.status !== 'success') {
+    return normalizedState
+  }
+
+  if (!hasUsableModelOutput(nextJob)) {
+    return normalizedState
+  }
+
+  const taskType = getNormalizedTaskType(nextJob.taskType)
+  if (taskType === 'multiview_to_model' || taskType === 'image_to_model') {
+    return {
+      modelTaskId: nextJob.taskId,
+      rigTaskId: '',
+      animateTaskId: '',
+    }
+  }
+
+  if (taskType === 'animate_rig') {
+    return {
+      ...normalizedState,
+      rigTaskId: nextJob.taskId,
+      animateTaskId: '',
+    }
+  }
+
+  if (taskType === 'animate_retarget' || taskType === 'animate_model') {
+    return {
+      ...normalizedState,
+      animateTaskId: nextJob.taskId,
+    }
+  }
+
+  return normalizedState
+}
+
 const derivePipelineStateFromArtifacts = ({
   portraitResult,
   multiviewResult,
   tripoJob,
   spriteResult,
   pipelineState,
+  step03TaskState,
 }) => {
   const normalizedPipelineState = normalizePipelineState(pipelineState)
   if (normalizedPipelineState) {
@@ -476,13 +568,15 @@ const derivePipelineStateFromArtifacts = ({
     nextPipelineState.unlocked.step3 = true
   }
 
-  const hasModel = Boolean(
+  const normalizedStep03TaskState = normalizeStep03TaskState(step03TaskState)
+  const hasAnimatedModel = Boolean(
     tripoJob?.status === 'success' &&
-      (tripoJob?.outputs?.modelUrl ||
-        tripoJob?.outputs?.downloadUrl ||
-        (tripoJob?.outputs?.variants && Object.keys(tripoJob.outputs.variants).length > 0)),
+      hasUsableModelOutput(tripoJob) &&
+      ['animate_retarget', 'animate_model'].includes(getNormalizedTaskType(tripoJob?.taskType)) &&
+      (!normalizedStep03TaskState.animateTaskId ||
+        normalizedStep03TaskState.animateTaskId === tripoJob?.taskId),
   )
-  if (hasModel) {
+  if (hasAnimatedModel) {
     nextPipelineState.approved.step3 = true
     nextPipelineState.unlocked.step4 = true
   }
@@ -627,12 +721,17 @@ function App() {
   const [pipelineState, setPipelineState] = useState(
     () => normalizePipelineState(initialSession?.pipelineState) || createInitialPipelineState(),
   )
+  const [step03TaskState, setStep03TaskState] = useState(() =>
+    mergeStep03TaskStateWithJob(initialSession?.step03TaskState, initialSession?.tripoJob),
+  )
+  const [taskTimings, setTaskTimings] = useState(() => createInitialTaskTimingState())
   const [isPreparingDownloadBundle, setIsPreparingDownloadBundle] = useState(false)
   const [healthVersions, setHealthVersions] = useState(() => ({
     tripoModelVersion: '',
     tripoRigModelVersion: '',
   }))
   const viewerCaptureApiRef = useRef(null)
+  const pendingTaskTimingByTaskIdRef = useRef(new Map())
   const statusProgressTrackRef = useRef(null)
   const step01PanelRef = useRef(null)
   const step02PanelRef = useRef(null)
@@ -672,6 +771,10 @@ function App() {
   const isStep02Unlocked = pipelineState.unlocked.step2
   const isStep03Unlocked = pipelineState.unlocked.step3
   const isStep04Unlocked = pipelineState.unlocked.step4
+  const isTripoJobInFlight = tripoJob.status === 'queued' || tripoJob.status === 'running'
+  const hasStep03ModelTask = Boolean(step03TaskState.modelTaskId)
+  const hasStep03RigTask = Boolean(step03TaskState.rigTaskId)
+  const hasStep03AnimateTask = Boolean(step03TaskState.animateTaskId)
   const retargetStartTaskId =
     tripoJob.taskType === 'animate_rig'
       ? tripoJob.taskId
@@ -696,11 +799,11 @@ function App() {
   const hasPortraitStepReady = Boolean(portraitResult?.imageDataUrl)
   const hasTurnaroundStepReady = hasCompleteTurnaround(multiviewResult?.views)
   const hasStep03ChainResult = Boolean(
-    activeModelUrl &&
+    hasStep03AnimateTask &&
+      activeModelUrl &&
+      tripoJob.taskId === step03TaskState.animateTaskId &&
       tripoJob.status === 'success' &&
-      ['animate_retarget', 'animate_model'].includes(
-        String(tripoJob.taskType || '').trim().toLowerCase(),
-      ),
+      ['animate_retarget', 'animate_model'].includes(getNormalizedTaskType(tripoJob.taskType)),
   )
   const hasStep04Output = hasRequiredSpriteBundle(spriteResult)
   const canApproveStep01 = isStep01Unlocked && hasPortraitStepReady && !isGeneratingPortrait
@@ -712,11 +815,26 @@ function App() {
     hasTurnaroundStepReady &&
     !isCreatingModel &&
     !isCreatingRigTask &&
-    !isCreatingRetargetTask
+    !isCreatingRetargetTask &&
+    !isTripoJobInFlight
+  const canRunStep03AutoRig =
+    isStep03Unlocked &&
+    hasStep03ModelTask &&
+    !isCreatingRigTask &&
+    !isCreatingModel &&
+    !isCreatingRetargetTask &&
+    !isTripoJobInFlight
+  const canRunStep03Animate =
+    isStep03Unlocked &&
+    hasStep03RigTask &&
+    !isCreatingRetargetTask &&
+    !isCreatingRigTask &&
+    !isCreatingModel &&
+    !isTripoJobInFlight
   const canApproveStep03 = isStep03Unlocked && hasStep03ChainResult && !isCreatingRetargetTask
   const canRunStep04Generation =
     isStep04Unlocked &&
-    hasStep03ChainResult &&
+    Boolean(activeModelUrl) &&
     !isGeneratingSprite &&
     !isCapturingWalkSprites &&
     !isPreparingDownloadBundle
@@ -940,6 +1058,7 @@ function App() {
               }
             : currentTripoJob,
         )
+        setStep03TaskState(mergeStep03TaskStateWithJob(session.step03TaskState, session.tripoJob))
         setPipelineState(
           derivePipelineStateFromArtifacts({
             portraitResult: session.portraitResult,
@@ -947,6 +1066,7 @@ function App() {
             tripoJob: session.tripoJob,
             spriteResult: session.spriteResult,
             pipelineState: session.pipelineState,
+            step03TaskState: session.step03TaskState,
           }),
         )
       })
@@ -977,6 +1097,7 @@ function App() {
       history,
       tripoJob,
       pipelineState,
+      step03TaskState,
     })
   }, [
     currentRunId,
@@ -989,6 +1110,7 @@ function App() {
     portraitResult,
     pipelineState,
     prompt,
+    step03TaskState,
     tripoJob,
   ])
 
@@ -1041,6 +1163,65 @@ function App() {
     })
   }, [])
 
+  const recordTaskTiming = useCallback((stage, startedAt, status = 'success') => {
+    if (!TASK_TIMING_STAGE_ORDER.includes(stage)) {
+      return
+    }
+
+    if (!Number.isFinite(startedAt)) {
+      return
+    }
+
+    const finishedAt = Date.now()
+    const durationMs = Math.max(0, finishedAt - startedAt)
+    setTaskTimings((currentValue) => ({
+      ...currentValue,
+      [stage]: {
+        durationMs,
+        status,
+        finishedAt,
+      },
+    }))
+  }, [])
+
+  const resetTaskTimingsFromStage = useCallback((stage) => {
+    const startIndex = TASK_TIMING_STAGE_ORDER.indexOf(stage)
+    if (startIndex < 0) {
+      return
+    }
+
+    setTaskTimings((currentValue) => {
+      const nextValue = { ...currentValue }
+      for (let index = startIndex; index < TASK_TIMING_STAGE_ORDER.length; index += 1) {
+        nextValue[TASK_TIMING_STAGE_ORDER[index]] = null
+      }
+      return nextValue
+    })
+
+    const taskTimingMap = pendingTaskTimingByTaskIdRef.current
+    for (const [taskId, taskMeta] of taskTimingMap.entries()) {
+      if (!taskMeta?.stage) {
+        continue
+      }
+
+      const stageIndex = TASK_TIMING_STAGE_ORDER.indexOf(taskMeta.stage)
+      if (stageIndex >= startIndex) {
+        taskTimingMap.delete(taskId)
+      }
+    }
+  }, [])
+
+  const startPendingTaskTiming = useCallback((taskId, stage, startedAt = Date.now()) => {
+    if (!taskId || !TASK_TIMING_STAGE_ORDER.includes(stage)) {
+      return
+    }
+
+    pendingTaskTimingByTaskIdRef.current.set(taskId, {
+      stage,
+      startedAt,
+    })
+  }, [])
+
   const resetPipelineFromStep = useCallback(
     (stepNumber) => {
       updatePipelineState((nextState) => {
@@ -1067,6 +1248,17 @@ function App() {
 
   const applyTripoJobUpdate = (nextJob, runId = currentRunId) => {
     setTripoJob((currentJob) => ({ ...currentJob, ...nextJob }))
+    setStep03TaskState((currentState) => mergeStep03TaskStateWithJob(currentState, nextJob))
+    if (nextJob?.taskId) {
+      const normalizedStatus = String(nextJob.status || '').trim().toLowerCase()
+      if (normalizedStatus === 'success' || normalizedStatus === 'failed') {
+        const timingMeta = pendingTaskTimingByTaskIdRef.current.get(nextJob.taskId)
+        if (timingMeta?.stage && Number.isFinite(timingMeta.startedAt)) {
+          pendingTaskTimingByTaskIdRef.current.delete(nextJob.taskId)
+          recordTaskTiming(timingMeta.stage, timingMeta.startedAt, normalizedStatus)
+        }
+      }
+    }
     if (runId) {
       setHistory((currentHistory) =>
         updateHistoryEntry(currentHistory, runId, {
@@ -1084,35 +1276,11 @@ function App() {
     return nextJob
   }
 
-  const waitForDelay = (durationMs) =>
-    new Promise((resolve) => {
-      window.setTimeout(resolve, durationMs)
-    })
-
-  const waitForTripoTaskSuccess = async (taskId, animationMode = '') => {
-    for (let attempt = 0; attempt < PIPELINE_POLL_MAX_ATTEMPTS; attempt += 1) {
-      const nextJob = await refreshTripoJob(taskId, animationMode || devSettings.tripoAnimationMode)
-      applyTripoJobUpdate(nextJob, currentRunId)
-
-      if (nextJob.status === 'success') {
-        return nextJob
-      }
-
-      if (nextJob.status === 'failed') {
-        throw new Error(sanitizeProviderNames(nextJob.error) || '3D generation failed.')
-      }
-
-      await waitForDelay(PIPELINE_POLL_INTERVAL_MS)
-    }
-
-    throw new Error('3D generation timed out.')
-  }
-
   const applyTripoTaskStart = (
     result,
     { animationMode = '', fallbackTaskType = '', fallbackSourceTaskId = '' } = {},
   ) => {
-    setTripoJob({
+    const nextJob = {
       taskId: result.taskId,
       taskType: result.taskType || fallbackTaskType,
       sourceTaskId: result.sourceTaskId || fallbackSourceTaskId,
@@ -1121,7 +1289,9 @@ function App() {
       error: result.error || '',
       outputs: null,
       animationMode,
-    })
+    }
+    setTripoJob(nextJob)
+    setStep03TaskState((currentState) => mergeStep03TaskStateWithJob(currentState, nextJob))
 
     if (currentRunId) {
       setHistory((currentHistory) =>
@@ -1326,11 +1496,15 @@ function App() {
     }
 
     setError('')
+    const startedAt = Date.now()
+    let generationStatus = 'failed'
+    resetTaskTimingsFromStage('multiview')
     if (resetDownstream) {
       resetPipelineFromStep(2)
     }
     setTurnaroundGenerationMode(mode)
     setTripoJob(EMPTY_JOB)
+    setStep03TaskState(createInitialStep03TaskState())
     setSpriteResult(null)
 
     try {
@@ -1350,12 +1524,14 @@ function App() {
           }),
         )
       }
+      generationStatus = 'success'
       return result
     } catch (requestError) {
       setError(requestError.message)
       return null
     } finally {
       setTurnaroundGenerationMode('')
+      recordTaskTiming('multiview', startedAt, generationStatus)
     }
   }
 
@@ -1366,11 +1542,15 @@ function App() {
     }
 
     setError('')
+    const startedAt = Date.now()
+    let generationStatus = 'failed'
+    resetTaskTimingsFromStage('portrait')
     resetPipelineFromStep(1)
     setIsGeneratingPortrait(true)
     setMultiviewResult(null)
     setSpriteResult(null)
     setTripoJob(EMPTY_JOB)
+    setStep03TaskState(createInitialStep03TaskState())
 
     try {
       const result = await generatePortrait({
@@ -1400,13 +1580,16 @@ function App() {
         }),
         ...currentHistory,
       ])
+      generationStatus = 'success'
     } catch (requestError) {
       setError(requestError.message)
       setIsGeneratingPortrait(false)
+      recordTaskTiming('portrait', startedAt, generationStatus)
       return
     }
 
     setIsGeneratingPortrait(false)
+    recordTaskTiming('portrait', startedAt, generationStatus)
   }
 
   const handleAcceptPortrait = () => {
@@ -1654,12 +1837,15 @@ function App() {
     }
 
     setError('')
+    const startedAt = Date.now()
+    resetTaskTimingsFromStage('generate3d')
     resetPipelineFromStep(3)
     setSpriteResult(null)
+    setStep03TaskState(createInitialStep03TaskState())
     setIsCreatingModel(true)
 
     try {
-      const modelTask = await createTripoTask({
+      const result = await createTripoTask({
         views: {
           front: multiviewResult.views.front.imageDataUrl,
           back: multiviewResult.views.back.imageDataUrl,
@@ -1669,62 +1855,107 @@ function App() {
         meshQuality: devSettings.tripoMeshQuality,
         textureQuality: devSettings.tripoTextureQuality,
       })
-      if (!modelTask?.taskId) {
-        throw new Error('Failed to start 3D model generation task.')
-      }
       setModelPreviewMode('apose')
-      applyTripoTaskStart(modelTask, {
+      applyTripoTaskStart(result, {
         animationMode: 'static',
         fallbackTaskType: 'multiview_to_model',
       })
-
-      const completedModelTask = await waitForTripoTaskSuccess(modelTask.taskId, 'static')
-      if (!completedModelTask?.taskId) {
-        throw new Error('3D model generation did not return a valid task id.')
+      if (result?.taskId) {
+        startPendingTaskTiming(result.taskId, 'generate3d', startedAt)
+      } else {
+        recordTaskTiming('generate3d', startedAt, 'failed')
       }
-
-      setIsCreatingModel(false)
-      setIsCreatingRigTask(true)
-      await waitForDelay(MODEL_CHAIN_STAGE_DELAY_MS)
-
-      const rigTask = await createTripoRigTask(completedModelTask.taskId)
-      if (!rigTask?.taskId) {
-        throw new Error('Failed to start rig generation task.')
-      }
-      applyTripoTaskStart(rigTask, {
-        animationMode: 'static',
-        fallbackTaskType: 'animate_rig',
-        fallbackSourceTaskId: completedModelTask.taskId,
-      })
-
-      const completedRigTask = await waitForTripoTaskSuccess(rigTask.taskId, 'static')
-      if (!completedRigTask?.taskId) {
-        throw new Error('Rig generation did not return a valid task id.')
-      }
-
-      setIsCreatingRigTask(false)
-      setIsCreatingRetargetTask(true)
-      await waitForDelay(MODEL_CHAIN_STAGE_DELAY_MS)
-
-      const retargetTask = await createTripoRetargetTask(completedRigTask.taskId, {
-        animationName: String(devSettings.tripoRetargetAnimationName || '').trim(),
-      })
-      if (!retargetTask?.taskId) {
-        throw new Error('Failed to start animation task.')
-      }
-      setModelPreviewMode('animated')
-      applyTripoTaskStart(retargetTask, {
-        animationMode: 'animated',
-        fallbackTaskType: 'animate_retarget',
-        fallbackSourceTaskId: completedRigTask.taskId,
-      })
-
-      await waitForTripoTaskSuccess(retargetTask.taskId, 'animated')
     } catch (requestError) {
-      setError(sanitizeProviderNames(requestError?.message || 'Failed to complete 3D generation.'))
+      setError(sanitizeProviderNames(requestError?.message || 'Failed to start 3D model generation.'))
+      recordTaskTiming('generate3d', startedAt, 'failed')
     } finally {
       setIsCreatingModel(false)
+    }
+  }
+
+  const handleStep03AutoRig = async () => {
+    if (!canRunStep03AutoRig) {
+      return
+    }
+
+    const sourceTaskId = step03TaskState.modelTaskId
+    if (!sourceTaskId) {
+      setError('Generate 3D successfully before running AutoRig.')
+      return
+    }
+
+    setError('')
+    const startedAt = Date.now()
+    resetTaskTimingsFromStage('autorig')
+    resetPipelineFromStep(3)
+    setSpriteResult(null)
+    setStep03TaskState((currentState) => ({
+      ...currentState,
+      rigTaskId: '',
+      animateTaskId: '',
+    }))
+    setIsCreatingRigTask(true)
+
+    try {
+      const result = await createTripoRigTask(sourceTaskId)
+      setModelPreviewMode('apose')
+      applyTripoTaskStart(result, {
+        animationMode: 'static',
+        fallbackTaskType: 'animate_rig',
+        fallbackSourceTaskId: sourceTaskId,
+      })
+      if (result?.taskId) {
+        startPendingTaskTiming(result.taskId, 'autorig', startedAt)
+      } else {
+        recordTaskTiming('autorig', startedAt, 'failed')
+      }
+    } catch (requestError) {
+      setError(sanitizeProviderNames(requestError?.message || 'Failed to start AutoRig.'))
+      recordTaskTiming('autorig', startedAt, 'failed')
+    } finally {
       setIsCreatingRigTask(false)
+    }
+  }
+
+  const handleStep03Animate = async () => {
+    if (!canRunStep03Animate) {
+      return
+    }
+
+    const sourceTaskId = step03TaskState.rigTaskId
+    if (!sourceTaskId) {
+      setError('Run AutoRig successfully before starting animation.')
+      return
+    }
+
+    setError('')
+    const startedAt = Date.now()
+    resetTaskTimingsFromStage('animate')
+    setStep03TaskState((currentState) => ({
+      ...currentState,
+      animateTaskId: '',
+    }))
+    setIsCreatingRetargetTask(true)
+
+    try {
+      const result = await createTripoRetargetTask(sourceTaskId, {
+        animationName: String(devSettings.tripoRetargetAnimationName || '').trim(),
+      })
+      setModelPreviewMode('animated')
+      applyTripoTaskStart(result, {
+        animationMode: 'animated',
+        fallbackTaskType: 'animate_retarget',
+        fallbackSourceTaskId: sourceTaskId,
+      })
+      if (result?.taskId) {
+        startPendingTaskTiming(result.taskId, 'animate', startedAt)
+      } else {
+        recordTaskTiming('animate', startedAt, 'failed')
+      }
+    } catch (requestError) {
+      setError(sanitizeProviderNames(requestError?.message || 'Failed to start animation.'))
+      recordTaskTiming('animate', startedAt, 'failed')
+    } finally {
       setIsCreatingRetargetTask(false)
     }
   }
@@ -1747,6 +1978,9 @@ function App() {
     }
 
     setError('')
+    const startedAt = Date.now()
+    let generationStatus = 'failed'
+    resetTaskTimingsFromStage('generate25d')
     resetPipelineFromStep(4)
     setIsGeneratingSprite(true)
     setIsCapturingWalkSprites(true)
@@ -1784,11 +2018,13 @@ function App() {
         spriteSize: captureSize,
         directions: mergedDirections,
       })
+      generationStatus = 'success'
     } catch (requestError) {
       setError(sanitizeProviderNames(requestError?.message || 'Failed to capture animated walk sprites.'))
     } finally {
       setIsGeneratingSprite(false)
       setIsCapturingWalkSprites(false)
+      recordTaskTiming('generate25d', startedAt, generationStatus)
     }
   }
 
@@ -1998,6 +2234,7 @@ function App() {
         taskId: nextJob.taskId || trimmedTaskId,
         animationMode: nextAnimationMode,
       })
+      setStep03TaskState((currentState) => mergeStep03TaskStateWithJob(currentState, nextJob))
     } catch (requestError) {
       setError(requestError.message)
     } finally {
@@ -2406,6 +2643,22 @@ function App() {
                 </button>
                 <button
                   type="button"
+                  className="secondary-button"
+                  disabled={!canRunStep03AutoRig}
+                  onClick={handleStep03AutoRig}
+                >
+                  {isCreatingRigTask ? 'Rigging...' : 'AutoRig'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={!canRunStep03Animate}
+                  onClick={handleStep03Animate}
+                >
+                  {isCreatingRetargetTask ? 'Animating...' : 'Animate'}
+                </button>
+                <button
+                  type="button"
                   className="accept-button accept-button--icon-only"
                   disabled={!canApproveStep03}
                   onClick={handleAcceptStep03}
@@ -2692,6 +2945,18 @@ function App() {
                 <p>Back: {formatModelLabel(multiviewResult?.modelUsage?.back)}</p>
                 <p>Left: {formatModelLabel(multiviewResult?.modelUsage?.left)}</p>
                 <p>Right: {formatModelLabel(multiviewResult?.modelUsage?.right)}</p>
+              </div>
+            </div>
+            <div className="dev-panel__field">
+              <span>Task Timing</span>
+              <div className="dev-panel__status">
+                <strong>Latest durations</strong>
+                <p>Portrait - {formatTimingMetric(taskTimings.portrait)}</p>
+                <p>Multiview - {formatTimingMetric(taskTimings.multiview)}</p>
+                <p>Generate 3D - {formatTimingMetric(taskTimings.generate3d)}</p>
+                <p>AutoRig - {formatTimingMetric(taskTimings.autorig)}</p>
+                <p>Animate - {formatTimingMetric(taskTimings.animate)}</p>
+                <p>Generate2.5D - {formatTimingMetric(taskTimings.generate25d)}</p>
               </div>
             </div>
             <div className="dev-panel__field">

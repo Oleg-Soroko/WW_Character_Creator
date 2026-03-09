@@ -90,6 +90,12 @@ const normalizePipelineState = (pipelineState) => ({
   },
 })
 
+const normalizeStep03TaskState = (step03TaskState) => ({
+  modelTaskId: String(step03TaskState?.modelTaskId || '').trim(),
+  rigTaskId: String(step03TaskState?.rigTaskId || '').trim(),
+  animateTaskId: String(step03TaskState?.animateTaskId || '').trim(),
+})
+
 const normalizeDevSettings = (devSettings) => ({
   portraitAspectRatio: devSettings?.portraitAspectRatio || '1:1',
   portraitPromptPreset: devSettings?.portraitPromptPreset || '',
@@ -169,6 +175,7 @@ export const loadPersistedSession = () => {
         : [],
       tripoJob: normalizeTripoJob(parsed?.tripoJob),
       pipelineState: normalizePipelineState(parsed?.pipelineState),
+      step03TaskState: normalizeStep03TaskState(parsed?.step03TaskState),
     }
   } catch {
     return null
@@ -205,6 +212,7 @@ export const loadPersistedRichSession = async () => {
         : [],
       tripoJob: normalizeTripoJob(payload.tripoJob),
       pipelineState: normalizePipelineState(payload.pipelineState),
+      step03TaskState: normalizeStep03TaskState(payload.step03TaskState),
     }
   } catch {
     return null
@@ -222,6 +230,7 @@ export const savePersistedSession = ({
   history,
   tripoJob,
   pipelineState,
+  step03TaskState,
 }) => {
   if (!canUseStorage()) {
     return Promise.resolve()
@@ -245,6 +254,7 @@ export const savePersistedSession = ({
     history: sanitizedHistory,
     tripoJob: normalizeTripoJob(tripoJob),
     pipelineState: normalizePipelineState(pipelineState),
+    step03TaskState: normalizeStep03TaskState(step03TaskState),
   }
 
   const richPayload = {
@@ -258,6 +268,7 @@ export const savePersistedSession = ({
     history: richHistory,
     tripoJob: normalizeTripoJob(tripoJob),
     pipelineState: normalizePipelineState(pipelineState),
+    step03TaskState: normalizeStep03TaskState(step03TaskState),
   }
 
   try {
@@ -279,6 +290,7 @@ export const savePersistedSession = ({
         history: Array.isArray(history) ? history.slice(0, HISTORY_LIMIT) : [],
         tripoJob: normalizeTripoJob(tripoJob),
         pipelineState: normalizePipelineState(pipelineState),
+        step03TaskState: normalizeStep03TaskState(step03TaskState),
       },
       STORE_KEY,
     )

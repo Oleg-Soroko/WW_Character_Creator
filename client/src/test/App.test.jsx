@@ -176,6 +176,8 @@ describe('App', () => {
     expect(within(getStep02Panel()).getByRole('button', { name: 'Accept Multiview' })).toBeDisabled()
 
     expect(within(getStep03Panel()).getByRole('button', { name: 'Generate 3D' })).toBeDisabled()
+    expect(within(getStep03Panel()).getByRole('button', { name: 'AutoRig' })).toBeDisabled()
+    expect(within(getStep03Panel()).getByRole('button', { name: 'Animate' })).toBeDisabled()
     expect(within(getStep03Panel()).getByRole('button', { name: 'Accept 3D' })).toBeDisabled()
 
     expect(within(getStep04Panel()).getByRole('button', { name: 'Generate 2.5D' })).toBeDisabled()
@@ -210,7 +212,7 @@ describe('App', () => {
     expect(getProgressFill()).toHaveAttribute('data-step-index', '3')
   })
 
-  it('runs step 03 chain in order with 3-second delays between stages', async () => {
+  it('runs step 03 as manual Generate 3D -> AutoRig -> Animate sequence', async () => {
     createTripoTask.mockResolvedValue({ taskId: 'model-task', status: 'queued' })
     createTripoRigTask.mockResolvedValue({ taskId: 'rig-task', status: 'queued' })
     createTripoRetargetTask.mockResolvedValue({ taskId: 'retarget-task', status: 'queued' })
@@ -253,35 +255,103 @@ describe('App', () => {
 
     const step03Panel = getStep03Panel()
     const step04Panel = getStep04Panel()
+    const generate3DButton = within(step03Panel).getByRole('button', { name: 'Generate 3D' })
+    const autoRigButton = within(step03Panel).getByRole('button', { name: 'AutoRig' })
+    const animateButton = within(step03Panel).getByRole('button', { name: 'Animate' })
+    const accept3DButton = within(step03Panel).getByRole('button', { name: 'Accept 3D' })
 
+    expect(autoRigButton).toBeDisabled()
+    expect(animateButton).toBeDisabled()
+    expect(accept3DButton).toBeDisabled()
     expect(within(step04Panel).getByRole('button', { name: 'Generate 2.5D' })).toBeDisabled()
 
-    const chainStartTimestamp = Date.now()
-    await user.click(within(step03Panel).getByRole('button', { name: 'Generate 3D' }))
+    await user.click(generate3DButton)
     await waitFor(() => expect(createTripoTask).toHaveBeenCalledTimes(1))
-
     expect(createTripoRigTask).not.toHaveBeenCalled()
-    await waitFor(() => expect(createTripoRigTask).toHaveBeenCalledWith('model-task'), {
-      timeout: 10000,
-    })
-    const rigCallDelayMs = Date.now() - chainStartTimestamp
-    expect(rigCallDelayMs).toBeGreaterThanOrEqual(2800)
+    expect(autoRigButton).toBeDisabled()
 
+    await waitFor(() => expect(autoRigButton).toBeEnabled(), { timeout: 8000 })
+
+    await user.click(autoRigButton)
+    await waitFor(() => expect(createTripoRigTask).toHaveBeenCalledWith('model-task'))
     expect(createTripoRetargetTask).not.toHaveBeenCalled()
+    expect(animateButton).toBeDisabled()
+
+    await waitFor(() => expect(animateButton).toBeEnabled(), { timeout: 8000 })
+
+    await user.click(animateButton)
     await waitFor(() =>
       expect(createTripoRetargetTask).toHaveBeenCalledWith('rig-task', { animationName: '' }),
-      { timeout: 10000 },
     )
-    const retargetCallDelayMs = Date.now() - chainStartTimestamp
-    expect(retargetCallDelayMs).toBeGreaterThanOrEqual(5800)
+    expect(accept3DButton).toBeDisabled()
 
-    const accept3DButton = within(step03Panel).getByRole('button', { name: 'Accept 3D' })
-    await waitFor(() => expect(accept3DButton).toBeEnabled())
+    await waitFor(() => expect(accept3DButton).toBeEnabled(), { timeout: 8000 })
     await user.click(accept3DButton)
 
     expect(within(step04Panel).getByRole('button', { name: 'Generate 2.5D' })).toBeEnabled()
     expect(getProgressFill()).toHaveAttribute('data-step-index', '3')
-  }, 20000)
+  }, 25000)
+
+  it('clears downstream step 03 stages when Generate 3D is run again', async () => {
+    createTripoTask
+      .mockResolvedValueOnce({ taskId: 'model-task-1', status: 'queued' })
+      .mockResolvedValueOnce({ taskId: 'model-task-2', status: 'queued' })
+    createTripoRigTask.mockResolvedValue({ taskId: 'rig-task-1', status: 'queued' })
+    createTripoRetargetTask.mockResolvedValue({ taskId: 'retarget-task-1', status: 'queued' })
+    getTripoTask.mockImplementation(async (taskId) => {
+      if (taskId === 'model-task-1' || taskId === 'model-task-2') {
+        return makeSuccessfulTask(
+          taskId,
+          'multiview_to_model',
+          'model',
+          `/api/tripo/tasks/${taskId}/model?variant=model&animationMode=static`,
+        )
+      }
+      if (taskId === 'rig-task-1') {
+        return makeSuccessfulTask(
+          'rig-task-1',
+          'animate_rig',
+          'rigged_model',
+          '/api/tripo/tasks/rig-task-1/model?variant=rigged_model&animationMode=static',
+        )
+      }
+      if (taskId === 'retarget-task-1') {
+        return makeSuccessfulTask(
+          'retarget-task-1',
+          'animate_retarget',
+          'animation_model',
+          '/api/tripo/tasks/retarget-task-1/model?variant=animation_model&animationMode=animated',
+        )
+      }
+      return { taskId, status: 'running', progress: 35, outputs: null }
+    })
+
+    render(<App />)
+    const user = userEvent.setup()
+    await unlockStep03(user)
+    const step03Panel = getStep03Panel()
+    const step04Panel = getStep04Panel()
+
+    const generate3DButton = within(step03Panel).getByRole('button', { name: 'Generate 3D' })
+    const autoRigButton = within(step03Panel).getByRole('button', { name: 'AutoRig' })
+    const animateButton = within(step03Panel).getByRole('button', { name: 'Animate' })
+    const accept3DButton = within(step03Panel).getByRole('button', { name: 'Accept 3D' })
+
+    await user.click(generate3DButton)
+    await waitFor(() => expect(autoRigButton).toBeEnabled(), { timeout: 8000 })
+    await user.click(autoRigButton)
+    await waitFor(() => expect(animateButton).toBeEnabled(), { timeout: 8000 })
+    await user.click(animateButton)
+    await waitFor(() => expect(accept3DButton).toBeEnabled(), { timeout: 8000 })
+    await user.click(accept3DButton)
+    expect(within(step04Panel).getByRole('button', { name: 'Generate 2.5D' })).toBeEnabled()
+
+    await user.click(generate3DButton)
+    expect(autoRigButton).toBeDisabled()
+    expect(animateButton).toBeDisabled()
+    expect(accept3DButton).toBeDisabled()
+    expect(within(step04Panel).getByRole('button', { name: 'Generate 2.5D' })).toBeDisabled()
+  }, 25000)
 
   it('keeps step 04 locked when step 03 fails and sanitizes provider names in top bar', async () => {
     createTripoTask.mockRejectedValue(new Error('Tripo failed via Gemini backend'))
