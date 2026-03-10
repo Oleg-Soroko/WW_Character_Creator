@@ -1,5 +1,5 @@
-export const DEFAULT_MULTIVIEW_PROMPT = `full-length one full body character, Side VIEW ONLY, head-to-toe in frame
-orthographic, neutral A-pose, light grey seamless background, sharp focus, No weapon, No cape`
+export const DEFAULT_MULTIVIEW_PROMPT = `Full length, full body, one character, Side VIEW ONLY, head-to-toe in frame,
+orthographic A-pose, white seamless background`
 
 const PORTRAIT_FALLBACK =
   'Create a stylized game-character portrait preserving the identity, costume, colors, and overall design of this reference.'

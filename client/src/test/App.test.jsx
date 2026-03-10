@@ -292,6 +292,217 @@ describe('App', () => {
     expect(getProgressFill()).toHaveAttribute('data-step-index', '3')
   }, 25000)
 
+  it('switches 3D preview to Animated when animation task completes', async () => {
+    createTripoTask.mockResolvedValue({ taskId: 'model-task', status: 'queued' })
+    createTripoRigTask.mockResolvedValue({ taskId: 'rig-task', status: 'queued' })
+    createTripoRetargetTask.mockResolvedValue({ taskId: 'retarget-task', status: 'queued' })
+    const retargetPolls = { count: 0 }
+    getTripoTask.mockImplementation(async (taskId) => {
+      if (taskId === 'model-task') {
+        return makeSuccessfulTask(
+          'model-task',
+          'multiview_to_model',
+          'model',
+          '/api/tripo/tasks/model-task/model?variant=model&animationMode=static',
+        )
+      }
+      if (taskId === 'rig-task') {
+        return makeSuccessfulTask(
+          'rig-task',
+          'animate_rig',
+          'rigged_model',
+          '/api/tripo/tasks/rig-task/model?variant=rigged_model&animationMode=static',
+        )
+      }
+      if (taskId === 'retarget-task') {
+        retargetPolls.count += 1
+        if (retargetPolls.count < 2) {
+          return {
+            taskId: 'retarget-task',
+            taskType: 'animate_retarget',
+            sourceTaskId: 'rig-task',
+            status: 'running',
+            progress: 55,
+            error: '',
+            outputs: null,
+          }
+        }
+        return makeSuccessfulTask(
+          'retarget-task',
+          'animate_retarget',
+          'animation_model',
+          '/api/tripo/tasks/retarget-task/model?variant=animation_model&animationMode=animated',
+        )
+      }
+      return { taskId, status: 'running', progress: 35, outputs: null }
+    })
+
+    render(<App />)
+    const user = userEvent.setup()
+    await unlockStep03(user)
+
+    const step03Panel = getStep03Panel()
+    const generate3DButton = within(step03Panel).getByRole('button', { name: 'Generate 3D' })
+    const autoRigButton = within(step03Panel).getByRole('button', { name: 'AutoRig' })
+    const animateButton = within(step03Panel).getByRole('button', { name: 'Animate' })
+    const accept3DButton = within(step03Panel).getByRole('button', { name: 'Accept 3D' })
+    const previewSelect = within(step03Panel).getByLabelText('3D model animation preview')
+
+    await user.click(generate3DButton)
+    await waitFor(() => expect(autoRigButton).toBeEnabled(), { timeout: 8000 })
+    await user.click(autoRigButton)
+    await waitFor(() => expect(animateButton).toBeEnabled(), { timeout: 8000 })
+    await user.click(animateButton)
+
+    await user.selectOptions(previewSelect, 'apose')
+    expect(previewSelect).toHaveValue('apose')
+
+    await waitFor(() => expect(accept3DButton).toBeEnabled(), { timeout: 12000 })
+    await waitFor(() => expect(previewSelect).toHaveValue('animated'), { timeout: 12000 })
+  }, 30000)
+
+  it('keeps polling animate tasks until the animated model variant is available', async () => {
+    createTripoTask.mockResolvedValue({ taskId: 'model-task', status: 'queued' })
+    createTripoRigTask.mockResolvedValue({ taskId: 'rig-task', status: 'queued' })
+    createTripoRetargetTask.mockResolvedValue({ taskId: 'retarget-task', status: 'queued' })
+    const retargetPolls = { count: 0 }
+    getTripoTask.mockImplementation(async (taskId) => {
+      if (taskId === 'model-task') {
+        return makeSuccessfulTask(
+          'model-task',
+          'multiview_to_model',
+          'model',
+          '/api/tripo/tasks/model-task/model?variant=model&animationMode=static',
+        )
+      }
+      if (taskId === 'rig-task') {
+        return makeSuccessfulTask(
+          'rig-task',
+          'animate_rig',
+          'rigged_model',
+          '/api/tripo/tasks/rig-task/model?variant=rigged_model&animationMode=static',
+        )
+      }
+      if (taskId === 'retarget-task') {
+        retargetPolls.count += 1
+        if (retargetPolls.count === 1) {
+          const riggedModelUrl =
+            '/api/tripo/tasks/retarget-task/model?variant=rigged_model&animationMode=animated'
+
+          return {
+            taskId: 'retarget-task',
+            taskType: 'animate_retarget',
+            sourceTaskId: 'rig-task',
+            status: 'success',
+            progress: 100,
+            error: '',
+            outputs: {
+              modelUrl: riggedModelUrl,
+              downloadUrl: riggedModelUrl,
+              variant: 'rigged_model',
+              variants: {
+                rigged_model: riggedModelUrl,
+              },
+            },
+          }
+        }
+
+        return makeSuccessfulTask(
+          'retarget-task',
+          'animate_retarget',
+          'animation_model',
+          '/api/tripo/tasks/retarget-task/model?variant=animation_model&animationMode=animated',
+        )
+      }
+      return { taskId, status: 'running', progress: 35, outputs: null }
+    })
+
+    render(<App />)
+    const user = userEvent.setup()
+    await unlockStep03(user)
+
+    const step03Panel = getStep03Panel()
+    const generate3DButton = within(step03Panel).getByRole('button', { name: 'Generate 3D' })
+    const autoRigButton = within(step03Panel).getByRole('button', { name: 'AutoRig' })
+    const animateButton = within(step03Panel).getByRole('button', { name: 'Animate' })
+    const accept3DButton = within(step03Panel).getByRole('button', { name: 'Accept 3D' })
+    const previewSelect = within(step03Panel).getByLabelText('3D model animation preview')
+
+    await user.click(generate3DButton)
+    await waitFor(() => expect(autoRigButton).toBeEnabled(), { timeout: 8000 })
+    await user.click(autoRigButton)
+    await waitFor(() => expect(animateButton).toBeEnabled(), { timeout: 8000 })
+    await user.click(animateButton)
+
+    await waitFor(() => expect(retargetPolls.count).toBeGreaterThanOrEqual(2), { timeout: 15000 })
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('viewer-stub')).toHaveTextContent(
+          '/api/tripo/tasks/retarget-task/model?variant=animation_model&animationMode=animated',
+        ),
+      { timeout: 15000 },
+    )
+    await waitFor(() => expect(accept3DButton).toBeEnabled(), { timeout: 15000 })
+    expect(previewSelect).toHaveValue('animated')
+  }, 30000)
+
+  it('keeps Generate 3D and AutoRig enabled after Animate starts', async () => {
+    createTripoTask.mockResolvedValue({ taskId: 'model-task', status: 'queued' })
+    createTripoRigTask.mockResolvedValue({ taskId: 'rig-task', status: 'queued' })
+    createTripoRetargetTask.mockResolvedValue({ taskId: 'retarget-task', status: 'queued' })
+    getTripoTask.mockImplementation(async (taskId) => {
+      if (taskId === 'model-task') {
+        return makeSuccessfulTask(
+          'model-task',
+          'multiview_to_model',
+          'model',
+          '/api/tripo/tasks/model-task/model?variant=model&animationMode=static',
+        )
+      }
+      if (taskId === 'rig-task') {
+        return makeSuccessfulTask(
+          'rig-task',
+          'animate_rig',
+          'rigged_model',
+          '/api/tripo/tasks/rig-task/model?variant=rigged_model&animationMode=static',
+        )
+      }
+      if (taskId === 'retarget-task') {
+        return {
+          taskId: 'retarget-task',
+          taskType: 'animate_retarget',
+          sourceTaskId: 'rig-task',
+          status: 'running',
+          progress: 55,
+          error: '',
+          outputs: null,
+        }
+      }
+      return { taskId, status: 'running', progress: 35, outputs: null }
+    })
+
+    render(<App />)
+    const user = userEvent.setup()
+    await unlockStep03(user)
+
+    const step03Panel = getStep03Panel()
+    const generate3DButton = within(step03Panel).getByRole('button', { name: 'Generate 3D' })
+    const autoRigButton = within(step03Panel).getByRole('button', { name: 'AutoRig' })
+    const animateButton = within(step03Panel).getByRole('button', { name: 'Animate' })
+
+    await user.click(generate3DButton)
+    await waitFor(() => expect(autoRigButton).toBeEnabled(), { timeout: 8000 })
+    await user.click(autoRigButton)
+    await waitFor(() => expect(animateButton).toBeEnabled(), { timeout: 8000 })
+    await user.click(animateButton)
+
+    await waitFor(() =>
+      expect(createTripoRetargetTask).toHaveBeenCalledWith('rig-task', { animationName: '' }),
+    )
+    expect(generate3DButton).toBeEnabled()
+    expect(autoRigButton).toBeEnabled()
+  }, 25000)
+
   it('clears downstream step 03 stages when Generate 3D is run again', async () => {
     createTripoTask
       .mockResolvedValueOnce({ taskId: 'model-task-1', status: 'queued' })

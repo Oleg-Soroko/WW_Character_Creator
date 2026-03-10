@@ -1,12 +1,31 @@
+import { DEFAULT_MULTIVIEW_PROMPT } from '../constants/prompts'
+
 const STORAGE_KEY = 'ww-character-session-v1'
 const DATABASE_NAME = 'ww-character-session-db'
 const DATABASE_VERSION = 1
 const STORE_NAME = 'session'
 const STORE_KEY = 'current'
 const HISTORY_LIMIT = 12
+const LEGACY_MULTIVIEW_PROMPTS = new Set([
+  `Full length, full body, one character, Side VIEW ONLY, head-to-toe in frame,
+orthographic neutral A-pose, white seamless background`,
+  `full-length one full body character, Side VIEW ONLY, head-to-toe in frame
+orthographic, neutral A-pose, light grey seamless background, sharp focus, No weapon, No cape`,
+])
 
 const canUseStorage = () => typeof window !== 'undefined' && Boolean(window.localStorage)
 const canUseIndexedDb = () => typeof window !== 'undefined' && Boolean(window.indexedDB)
+
+const normalizeMultiviewPromptValue = (value) => {
+  const normalizedValue = String(value || '').trim()
+  if (!normalizedValue) {
+    return ''
+  }
+
+  return LEGACY_MULTIVIEW_PROMPTS.has(normalizedValue)
+    ? DEFAULT_MULTIVIEW_PROMPT
+    : normalizedValue
+}
 
 const normalizeHistoryEntry = (entry) => ({
   id: entry?.id || `recovered-${entry?.tripoTaskId || Date.now()}`,
@@ -108,6 +127,7 @@ const normalizeDevSettings = (devSettings) => ({
   tripoRetargetAnimationName: String(devSettings?.tripoRetargetAnimationName || ''),
   tripoMeshQuality: devSettings?.tripoMeshQuality === 'detailed' ? 'detailed' : 'standard',
   tripoTextureQuality: devSettings?.tripoTextureQuality === 'detailed' ? 'detailed' : 'standard',
+  tripoFaceLimit: String(devSettings?.tripoFaceLimit ?? '').trim(),
   defaultSpritesEnabled: Boolean(devSettings?.defaultSpritesEnabled),
 })
 
@@ -164,7 +184,7 @@ export const loadPersistedSession = () => {
     const parsed = JSON.parse(rawValue)
     return {
       prompt: parsed?.prompt || '',
-      multiviewPrompt: parsed?.multiviewPrompt || '',
+      multiviewPrompt: normalizeMultiviewPromptValue(parsed?.multiviewPrompt),
       devSettings: normalizeDevSettings(parsed?.devSettings),
       portraitResult: normalizePortraitResult(parsed?.portraitResult),
       multiviewResult: normalizeMultiviewResult(parsed?.multiviewResult),
@@ -197,7 +217,7 @@ export const loadPersistedRichSession = async () => {
 
     return {
       prompt: payload.prompt || '',
-      multiviewPrompt: payload.multiviewPrompt || '',
+      multiviewPrompt: normalizeMultiviewPromptValue(payload.multiviewPrompt),
       devSettings: normalizeDevSettings(payload.devSettings),
       portraitResult: normalizePortraitResult(payload.portraitResult),
       multiviewResult: normalizeMultiviewResult(payload.multiviewResult),

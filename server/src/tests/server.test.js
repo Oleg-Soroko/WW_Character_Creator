@@ -706,6 +706,60 @@ describe('tripoService', () => {
     expect(requestPayload.options.texture_quality).toBe('detailed')
   })
 
+  it('passes uncapped face_limit without smart_low_poly', async () => {
+    const makeDataUrl = async (color) => {
+      const buffer = await sharp({
+        create: {
+          width: 1,
+          height: 1,
+          channels: 3,
+          background: color,
+        },
+      })
+        .png()
+        .toBuffer()
+
+      return `data:image/png;base64,${buffer.toString('base64')}`
+    }
+
+    const uploadImageBuffer = vi
+      .fn()
+      .mockResolvedValueOnce({ file_token: 'front-token', type: 'jpg' })
+      .mockResolvedValueOnce({ file_token: 'left-token', type: 'jpg' })
+      .mockResolvedValueOnce({ file_token: 'back-token', type: 'jpg' })
+      .mockResolvedValueOnce({ file_token: 'right-token', type: 'jpg' })
+    const createMultiviewTask = vi.fn().mockResolvedValue('task-face-limit-1')
+    const tripoService = createTripoService({
+      tripoClient: {
+        uploadImageBuffer,
+        createMultiviewTask,
+        createImageTask: vi.fn(),
+        getTask: vi.fn(),
+        fetchRemoteAsset: vi.fn(),
+      },
+      config: {
+        ...TEST_CONFIG,
+        tripoModelVersion: 'v3.1-20260211',
+      },
+    })
+
+    await tripoService.createTaskFromViews(
+      {
+        front: await makeDataUrl({ r: 255, g: 0, b: 0 }),
+        back: await makeDataUrl({ r: 0, g: 255, b: 0 }),
+        left: await makeDataUrl({ r: 0, g: 0, b: 255 }),
+        right: await makeDataUrl({ r: 255, g: 255, b: 0 }),
+      },
+      {
+        faceLimit: 200000,
+      },
+    )
+
+    const requestPayload = createMultiviewTask.mock.calls[0][0]
+    expect(requestPayload.options.face_limit).toBe(200000)
+    expect(requestPayload.options.smart_low_poly).toBeUndefined()
+  })
+
   it('omits geometry_quality when model_version is below v3.0-20250812', async () => {
     const makeDataUrl = async (color) => {
       const buffer = await sharp({
@@ -1137,6 +1191,81 @@ describe('tripoService', () => {
         taskId: 'anim-task-walk-1',
         taskType: 'animate_retarget',
         sourceTaskId: 'rig-task-walk-1',
+      }),
+    )
+  })
+
+  it('treats animate_retarget task summaries as animation tasks even without cached links', async () => {
+    const createRigTask = vi.fn()
+    const createAnimationTask = vi.fn()
+    const tripoService = createTripoService({
+      tripoClient: {
+        uploadImageBuffer: vi.fn(),
+        createMultiviewTask: vi.fn(),
+        createImageTask: vi.fn(),
+        createRigTask,
+        createAnimationTask,
+        getTask: vi
+          .fn()
+          .mockResolvedValueOnce({
+            task_id: 'anim-task-existing-1',
+            type: 'animate_retarget',
+            status: 'success',
+            progress: 100,
+            original_model_task_id: 'rig-task-existing-1',
+            output: {
+              animation_model: 'https://example.com/animated-existing.glb',
+            },
+          })
+          .mockResolvedValueOnce({
+            task_id: 'rig-task-existing-1',
+            type: 'animate_rig',
+            status: 'success',
+            progress: 100,
+            original_model_task_id: 'task-base-existing-1',
+            output: {
+              rigged_model: 'https://example.com/rigged-existing.glb',
+            },
+          })
+          .mockResolvedValueOnce({
+            task_id: 'task-base-existing-1',
+            type: 'image_to_model',
+            status: 'success',
+            progress: 100,
+            output: {
+              model: 'https://example.com/base-existing.glb',
+            },
+          }),
+        fetchRemoteAsset: vi.fn(),
+      },
+      config: {
+        ...TEST_CONFIG,
+        tripoRigMixamo: true,
+        tripoIdleAnimationEnabled: true,
+      },
+    })
+
+    const summary = await tripoService.getTaskSummary('anim-task-existing-1', {
+      animationMode: 'animated',
+    })
+
+    expect(createRigTask).not.toHaveBeenCalled()
+    expect(createAnimationTask).not.toHaveBeenCalled()
+    expect(summary.taskId).toBe('anim-task-existing-1')
+    expect(summary.outputs).toEqual(
+      expect.objectContaining({
+        modelUrl: '/api/tripo/tasks/anim-task-existing-1/model?variant=animation_model&animationMode=animated',
+        downloadUrl:
+          '/api/tripo/tasks/anim-task-existing-1/model?variant=animation_model&animationMode=animated',
+        variant: 'animation_model',
+      }),
+    )
+    expect(summary.outputs.variants).toEqual(
+      expect.objectContaining({
+        animation_model:
+          '/api/tripo/tasks/anim-task-existing-1/model?variant=animation_model&animationMode=animated',
+        rigged_model:
+          '/api/tripo/tasks/anim-task-existing-1/model?variant=rigged_model&animationMode=animated',
       }),
     )
   })

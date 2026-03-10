@@ -454,8 +454,14 @@ export const createTripoService = ({ tripoClient, config, taskAuditLogger = null
   const resolveTaskForOutput = async (taskId, { animationMode } = {}) => {
     let resolvedTaskId = taskId
     let task = await tripoClient.getTask(taskId)
-    const isRigTask = sourceTaskByRigTaskId.has(taskId) || task?.type === 'animate_rig'
-    const isAnimationTask = sourceTaskByAnimationTaskId.has(taskId)
+    const normalizedTaskType = String(task?.type || '')
+      .trim()
+      .toLowerCase()
+    const isRigTask = sourceTaskByRigTaskId.has(taskId) || normalizedTaskType === 'animate_rig'
+    const isAnimationTask =
+      sourceTaskByAnimationTaskId.has(taskId) ||
+      normalizedTaskType === 'animate_retarget' ||
+      normalizedTaskType === 'animate_model'
 
     const shouldRig = getRigEnabledForTask(taskId, animationMode)
     if (!isAnimationTask && shouldRig && !isRigTask && task?.status === 'success') {
@@ -479,14 +485,27 @@ export const createTripoService = ({ tripoClient, config, taskAuditLogger = null
     }
   }
 
-  const normalizeQuality = (value, fallback = 'standard') => {
-    const normalizedValue = String(value || '')
-      .trim()
-      .toLowerCase()
-    return QUALITY_ALIASES[normalizedValue] || QUALITY_ALIASES[fallback] || 'standard'
+const normalizeQuality = (value, fallback = 'standard') => {
+  const normalizedValue = String(value || '')
+    .trim()
+    .toLowerCase()
+  return QUALITY_ALIASES[normalizedValue] || QUALITY_ALIASES[fallback] || 'standard'
+}
+
+  const normalizeFaceLimit = (value) => {
+    if (value === null || value === undefined || value === '') {
+      return null
+    }
+
+    const parsedValue = Number(value)
+    if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+      return null
+    }
+
+    return Math.floor(parsedValue)
   }
 
-  const buildGenerationOptions = ({ meshQuality, textureQuality } = {}) => {
+  const buildGenerationOptions = ({ meshQuality, textureQuality, faceLimit } = {}) => {
     const options = {
       model_version: config.tripoModelVersion,
       texture: config.tripoTexture,
@@ -498,6 +517,11 @@ export const createTripoService = ({ tripoClient, config, taskAuditLogger = null
 
     if (isModelVersionAtLeast(config.tripoModelVersion, MESH_QUALITY_MIN_MODEL_VERSION)) {
       options.geometry_quality = normalizeQuality(meshQuality, config.tripoMeshQuality || 'standard')
+    }
+
+    const normalizedFaceLimit = normalizeFaceLimit(faceLimit)
+    if (normalizedFaceLimit !== null) {
+      options.face_limit = normalizedFaceLimit
     }
 
     return options
@@ -522,7 +546,10 @@ export const createTripoService = ({ tripoClient, config, taskAuditLogger = null
   }
 
   return {
-    async createTaskFromViews(viewDataUrls, { animationMode, meshQuality, textureQuality } = {}) {
+    async createTaskFromViews(
+      viewDataUrls,
+      { animationMode, meshQuality, textureQuality, faceLimit } = {},
+    ) {
       // Tripo multiview slot order is Front, Left, Back, Right.
       const orderedViewNames = ['front', 'left', 'back', 'right']
       const shouldAnimate = resolveAnimationPreference(animationMode)
@@ -532,7 +559,7 @@ export const createTripoService = ({ tripoClient, config, taskAuditLogger = null
 
       const taskId = await tripoClient.createMultiviewTask({
         files: uploadedFiles,
-        options: buildGenerationOptions({ meshQuality, textureQuality }),
+        options: buildGenerationOptions({ meshQuality, textureQuality, faceLimit }),
       })
 
       rigEnabledByTaskId.set(taskId, shouldRig)
@@ -549,7 +576,7 @@ export const createTripoService = ({ tripoClient, config, taskAuditLogger = null
     },
     async createTaskFromFrontBackViews(
       viewDataUrls,
-      { animationMode, meshQuality, textureQuality } = {},
+      { animationMode, meshQuality, textureQuality, faceLimit } = {},
     ) {
       const orderedViewNames = ['front', 'back']
       const shouldAnimate = resolveAnimationPreference(animationMode)
@@ -558,7 +585,7 @@ export const createTripoService = ({ tripoClient, config, taskAuditLogger = null
       const taskId = await tripoClient.createMultiviewTask({
         // Place images into explicit Front, Left, Back, Right slots.
         files: [uploadedFiles[0], {}, uploadedFiles[1], {}],
-        options: buildGenerationOptions({ meshQuality, textureQuality }),
+        options: buildGenerationOptions({ meshQuality, textureQuality, faceLimit }),
       })
 
       rigEnabledByTaskId.set(taskId, shouldRig)
@@ -573,7 +600,10 @@ export const createTripoService = ({ tripoClient, config, taskAuditLogger = null
         error: '',
       }
     },
-    async createTaskFromFrontView(imageDataUrl, { animationMode, meshQuality, textureQuality } = {}) {
+    async createTaskFromFrontView(
+      imageDataUrl,
+      { animationMode, meshQuality, textureQuality, faceLimit } = {},
+    ) {
       if (!imageDataUrl) {
         throw new AppError('Missing front image for Tripo generation.', 400)
       }
@@ -588,7 +618,7 @@ export const createTripoService = ({ tripoClient, config, taskAuditLogger = null
           type: 'image',
           file_token: uploadToken.file_token,
         },
-        options: buildGenerationOptions({ meshQuality, textureQuality }),
+        options: buildGenerationOptions({ meshQuality, textureQuality, faceLimit }),
       })
 
       rigEnabledByTaskId.set(taskId, shouldRig)

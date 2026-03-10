@@ -24,6 +24,7 @@ import { SpriteGrid } from './components/SpriteGrid'
 import { downloadBlob, downloadDataUrl, downloadFromUrl } from './lib/download'
 import { createHistoryEntry, createRunId, updateHistoryEntry } from './lib/historyStore'
 import {
+  clearPersistedSession,
   loadPersistedSession,
   loadPersistedRichSession,
   savePersistedSession,
@@ -62,6 +63,7 @@ const DEV_PRESETS = {
   tripoRetargetAnimationName: '',
   tripoMeshQuality: 'standard',
   tripoTextureQuality: 'standard',
+  tripoFaceLimit: '',
   defaultSpritesEnabled: false,
 }
 
@@ -498,6 +500,31 @@ const normalizeStep03TaskState = (value) => ({
   animateTaskId: String(value?.animateTaskId || '').trim(),
 })
 
+const getNormalizedTaskType = (value) => String(value || '').trim().toLowerCase()
+
+const getPrimaryOutputVariant = (job) => {
+  const explicitVariant = String(job?.outputs?.variant || '').trim()
+  if (explicitVariant) {
+    return explicitVariant
+  }
+
+  const modelUrl = String(job?.outputs?.modelUrl || '').trim()
+  const variantMatch = modelUrl.match(/[?&]variant=([^&]+)/)
+  return variantMatch ? decodeURIComponent(variantMatch[1]) : ''
+}
+
+const hasVariantOutput = (job, expectedVariants) => {
+  if (!job?.outputs || !Array.isArray(expectedVariants) || expectedVariants.length === 0) {
+    return false
+  }
+
+  if (expectedVariants.some((variant) => Boolean(job.outputs?.variants?.[variant]))) {
+    return true
+  }
+
+  return expectedVariants.includes(getPrimaryOutputVariant(job))
+}
+
 const hasUsableModelOutput = (job) =>
   Boolean(
     job?.outputs?.modelUrl ||
@@ -505,7 +532,36 @@ const hasUsableModelOutput = (job) =>
       (job?.outputs?.variants && Object.keys(job.outputs.variants).length > 0),
   )
 
-const getNormalizedTaskType = (value) => String(value || '').trim().toLowerCase()
+const hasExpectedTaskOutput = (job) => {
+  const normalizedTaskType = getNormalizedTaskType(job?.taskType)
+
+  if (normalizedTaskType === 'animate_retarget' || normalizedTaskType === 'animate_model') {
+    return hasVariantOutput(job, ANIMATED_MODEL_VARIANT_PRIORITY)
+  }
+
+  if (normalizedTaskType === 'animate_rig') {
+    return hasVariantOutput(job, ['rigged_model'])
+  }
+
+  if (normalizedTaskType === 'animate_prerigcheck') {
+    return Boolean(job?.outputs?.preRigCheck)
+  }
+
+  return hasUsableModelOutput(job)
+}
+
+const shouldContinuePollingTripoJob = (job) => {
+  if (!job?.taskId) {
+    return false
+  }
+
+  const normalizedStatus = String(job.status || '').trim().toLowerCase()
+  if (normalizedStatus === 'queued' || normalizedStatus === 'running') {
+    return true
+  }
+
+  return normalizedStatus === 'success' && !hasExpectedTaskOutput(job)
+}
 
 const mergeStep03TaskStateWithJob = (currentState, nextJob) => {
   const normalizedState = normalizeStep03TaskState(currentState)
@@ -651,6 +707,34 @@ const normalizeTripoQuality = (value, fallback = DEV_PRESETS.tripoMeshQuality) =
   return TRIPO_QUALITY_VALUES.has(normalizedValue) ? normalizedValue : fallback
 }
 
+const normalizeTripoFaceLimitInput = (value, fallback = DEV_PRESETS.tripoFaceLimit) => {
+  const trimmedValue = String(value ?? '').trim()
+  if (!trimmedValue) {
+    return ''
+  }
+
+  const parsedValue = Number(trimmedValue)
+  if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+    return String(fallback || '')
+  }
+
+  return String(Math.floor(parsedValue))
+}
+
+const parseTripoFaceLimit = (value) => {
+  const trimmedValue = String(value ?? '').trim()
+  if (!trimmedValue) {
+    return null
+  }
+
+  const parsedValue = Number(trimmedValue)
+  if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+    return null
+  }
+
+  return Math.floor(parsedValue)
+}
+
 function App() {
   const [initialSession] = useState(() => loadPersistedSession())
   const [prompt, setPrompt] = useState(() => initialSession?.prompt || '')
@@ -671,6 +755,10 @@ function App() {
     tripoTextureQuality: normalizeTripoQuality(
       initialSession?.devSettings?.tripoTextureQuality,
       DEV_PRESETS.tripoTextureQuality,
+    ),
+    tripoFaceLimit: normalizeTripoFaceLimitInput(
+      initialSession?.devSettings?.tripoFaceLimit,
+      DEV_PRESETS.tripoFaceLimit,
     ),
     defaultSpritesEnabled:
       typeof initialSession?.devSettings?.defaultSpritesEnabled === 'boolean'
@@ -705,6 +793,7 @@ function App() {
   const [isRefreshingTripoJob, setIsRefreshingTripoJob] = useState(false)
   const [isLoadingExistingTripoTask, setIsLoadingExistingTripoTask] = useState(false)
   const [isRestartingServer, setIsRestartingServer] = useState(false)
+  const [isResettingSession, setIsResettingSession] = useState(false)
   const [hasHydratedPersistedSession, setHasHydratedPersistedSession] = useState(false)
   const [viewerResetSignal, setViewerResetSignal] = useState(0)
   const [isDevPanelOpen, setIsDevPanelOpen] = useState(false)
@@ -771,7 +860,7 @@ function App() {
   const isStep02Unlocked = pipelineState.unlocked.step2
   const isStep03Unlocked = pipelineState.unlocked.step3
   const isStep04Unlocked = pipelineState.unlocked.step4
-  const isTripoJobInFlight = tripoJob.status === 'queued' || tripoJob.status === 'running'
+  const isTripoJobInFlight = shouldContinuePollingTripoJob(tripoJob)
   const hasStep03ModelTask = Boolean(step03TaskState.modelTaskId)
   const hasStep03RigTask = Boolean(step03TaskState.rigTaskId)
   const hasStep03AnimateTask = Boolean(step03TaskState.animateTaskId)
@@ -787,6 +876,7 @@ function App() {
   )
   const canCreateFrontModel = Boolean(multiviewResult?.views?.front?.imageDataUrl)
   const resolvedAnimateRigTaskId = String(animateRigTaskIdInput || '').trim() || tripoJob.taskId
+  const resolvedTripoFaceLimit = parseTripoFaceLimit(devSettings.tripoFaceLimit)
   const canAnimateRig = Boolean(resolvedAnimateRigTaskId)
   const canAnimateRetarget = Boolean(retargetStartTaskId && tripoJob.status === 'success')
   const preRigCheckResult = tripoJob.outputs?.preRigCheck || null
@@ -800,7 +890,7 @@ function App() {
   const hasTurnaroundStepReady = hasCompleteTurnaround(multiviewResult?.views)
   const hasStep03ChainResult = Boolean(
     hasStep03AnimateTask &&
-      activeModelUrl &&
+      hasExpectedTaskOutput(tripoJob) &&
       tripoJob.taskId === step03TaskState.animateTaskId &&
       tripoJob.status === 'success' &&
       ['animate_retarget', 'animate_model'].includes(getNormalizedTaskType(tripoJob.taskType)),
@@ -813,24 +903,15 @@ function App() {
   const canRunStep03Generation =
     isStep03Unlocked &&
     hasTurnaroundStepReady &&
-    !isCreatingModel &&
-    !isCreatingRigTask &&
-    !isCreatingRetargetTask &&
-    !isTripoJobInFlight
+    !isCreatingModel
   const canRunStep03AutoRig =
     isStep03Unlocked &&
     hasStep03ModelTask &&
-    !isCreatingRigTask &&
-    !isCreatingModel &&
-    !isCreatingRetargetTask &&
-    !isTripoJobInFlight
+    !isCreatingRigTask
   const canRunStep03Animate =
     isStep03Unlocked &&
     hasStep03RigTask &&
-    !isCreatingRetargetTask &&
-    !isCreatingRigTask &&
-    !isCreatingModel &&
-    !isTripoJobInFlight
+    !isCreatingRetargetTask
   const canApproveStep03 = isStep03Unlocked && hasStep03ChainResult && !isCreatingRetargetTask
   const canRunStep04Generation =
     isStep04Unlocked &&
@@ -1029,6 +1110,10 @@ function App() {
             session.devSettings?.tripoTextureQuality,
             currentDevSettings.tripoTextureQuality,
           ),
+          tripoFaceLimit: normalizeTripoFaceLimitInput(
+            session.devSettings?.tripoFaceLimit,
+            currentDevSettings.tripoFaceLimit,
+          ),
           defaultSpritesEnabled:
             typeof session.devSettings?.defaultSpritesEnabled === 'boolean'
               ? session.devSettings.defaultSpritesEnabled
@@ -1147,6 +1232,14 @@ function App() {
         : 'apose',
     )
   }, [tripoJob.taskId, tripoJob.taskType])
+
+  useEffect(() => {
+    const isAnimationTask =
+      tripoJob.taskType === 'animate_retarget' || tripoJob.taskType === 'animate_model'
+    if (isAnimationTask && tripoJob.status === 'success') {
+      setModelPreviewMode('animated')
+    }
+  }, [tripoJob.status, tripoJob.taskType])
 
   const handleViewerCaptureApiReady = useCallback((captureApi) => {
     viewerCaptureApiRef.current = captureApi || null
@@ -1439,7 +1532,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!tripoJob.taskId || !['queued', 'running'].includes(tripoJob.status)) {
+    if (!shouldContinuePollingTripoJob(tripoJob)) {
       return undefined
     }
 
@@ -1756,6 +1849,7 @@ function App() {
         },
         meshQuality: devSettings.tripoMeshQuality,
         textureQuality: devSettings.tripoTextureQuality,
+        faceLimit: resolvedTripoFaceLimit,
       })
       setModelPreviewMode('apose')
       applyTripoTaskStart(result, {
@@ -1785,6 +1879,7 @@ function App() {
         imageDataUrl: frontImageDataUrl,
         meshQuality: devSettings.tripoMeshQuality,
         textureQuality: devSettings.tripoTextureQuality,
+        faceLimit: resolvedTripoFaceLimit,
       })
       setModelPreviewMode('apose')
       applyTripoTaskStart(result, {
@@ -1818,6 +1913,7 @@ function App() {
         },
         meshQuality: devSettings.tripoMeshQuality,
         textureQuality: devSettings.tripoTextureQuality,
+        faceLimit: resolvedTripoFaceLimit,
       })
       setModelPreviewMode('apose')
       applyTripoTaskStart(result, {
@@ -1854,6 +1950,7 @@ function App() {
         },
         meshQuality: devSettings.tripoMeshQuality,
         textureQuality: devSettings.tripoTextureQuality,
+        faceLimit: resolvedTripoFaceLimit,
       })
       setModelPreviewMode('apose')
       applyTripoTaskStart(result, {
@@ -2267,6 +2364,70 @@ function App() {
       window.setTimeout(() => {
         setIsRestartingServer(false)
       }, 1200)
+    }
+  }
+
+  const handleResetSession = async () => {
+    if (isResettingSession) {
+      return
+    }
+
+    setError('')
+    setIsResettingSession(true)
+
+    try {
+      await clearPersistedSession()
+    } catch {
+      // Best effort clear, continue resetting in-memory state.
+    } finally {
+      pendingTaskTimingByTaskIdRef.current.clear()
+      setPrompt('')
+      setReferenceImage(null)
+      setMultiviewPrompt(DEV_PRESETS.multiviewPreset)
+      setPortraitResult(null)
+      setMultiviewResult(null)
+      setSpriteResult(null)
+      setCurrentRunId('')
+      setHistory([])
+      setTripoJob(EMPTY_JOB)
+      setPipelineState(createInitialPipelineState())
+      setStep03TaskState(createInitialStep03TaskState())
+      setTaskTimings(createInitialTaskTimingState())
+      setTurnaroundGenerationMode('')
+      setIsGeneratingPortrait(false)
+      setIsCreatingModel(false)
+      setIsCreatingFrontBackModel(false)
+      setIsCreatingFrontModel(false)
+      setIsCreatingPreRigCheckTask(false)
+      setIsCreatingRigTask(false)
+      setIsCreatingRetargetTask(false)
+      setIsGeneratingSprite(false)
+      setIsRefreshingTripoJob(false)
+      setIsLoadingExistingTripoTask(false)
+      setViewerResetSignal((signal) => signal + 1)
+      setModelViewPack(null)
+      setIsCapturingModelViews(false)
+      setIsCapturingWalkSprites(false)
+      setIsBuildingModelViewGif(false)
+      setModelPreviewMode('apose')
+      setSpritePreviewMode('walk_8')
+      setDefaultSpritesCacheKey(Date.now())
+      setExistingTripoTaskIdInput('')
+      setAnimateRigTaskIdInput('')
+      setProgressBoundaries([...DEFAULT_PROGRESS_BOUNDARIES])
+      setIsPreparingDownloadBundle(false)
+      setDevSettings({
+        portraitAspectRatio: DEV_PRESETS.portraitAspectRatio,
+        portraitPromptPreset: DEV_PRESETS.portraitPreset,
+        spriteSize: DEV_PRESETS.spriteSize,
+        tripoAnimationMode: DEV_PRESETS.tripoAnimationMode,
+        tripoRetargetAnimationName: DEV_PRESETS.tripoRetargetAnimationName,
+        tripoMeshQuality: DEV_PRESETS.tripoMeshQuality,
+        tripoTextureQuality: DEV_PRESETS.tripoTextureQuality,
+        tripoFaceLimit: DEV_PRESETS.tripoFaceLimit,
+        defaultSpritesEnabled: DEV_PRESETS.defaultSpritesEnabled,
+      })
+      setIsResettingSession(false)
     }
   }
 
@@ -2871,6 +3032,25 @@ function App() {
                 ))}
               </select>
             </label>
+            <label className="dev-panel__field">
+              <span>Face Limit</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={devSettings.tripoFaceLimit}
+                placeholder="empty = adaptive"
+                onChange={(event) =>
+                  setDevSettings((currentValue) => ({
+                    ...currentValue,
+                    tripoFaceLimit: normalizeTripoFaceLimitInput(
+                      event.target.value,
+                      currentValue.tripoFaceLimit,
+                    ),
+                  }))
+                }
+              />
+            </label>
             <div className="action-row action-row--compact action-row--dev">
               <button
                 type="button"
@@ -2973,6 +3153,7 @@ function App() {
                 </p>
                 <p>Mesh quality: {TRIPO_QUALITY_LABELS[devSettings.tripoMeshQuality]}</p>
                 <p>Texture quality: {TRIPO_QUALITY_LABELS[devSettings.tripoTextureQuality]}</p>
+                <p>Face limit: {resolvedTripoFaceLimit || 'adaptive'}</p>
                 <p>Preview pose: {modelPreviewMode === 'apose' ? 'A-pose' : 'Animated'}</p>
                 <p>
                   Preview variant:{' '}
@@ -3119,6 +3300,14 @@ function App() {
                   onClick={handleRestartServer}
                 >
                   {isRestartingServer ? 'Restarting Server...' : 'Restart Server'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={isResettingSession}
+                  onClick={handleResetSession}
+                >
+                  {isResettingSession ? 'Resetting Session...' : 'Reset Session'}
                 </button>
               </div>
             </div>
