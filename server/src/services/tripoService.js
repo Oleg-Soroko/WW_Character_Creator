@@ -19,6 +19,12 @@ const MULTI_ANIMATION_PRESETS = Object.freeze([
   },
   { key: 'walk', preset: 'preset:walk', aliases: ['preset:biped:walk'], label: 'Walk' },
   { key: 'run', preset: 'preset:run', aliases: ['preset:biped:run'], label: 'Run' },
+  {
+    key: 'look_around',
+    preset: 'preset:biped:look_around',
+    aliases: ['preset:look_around'],
+    label: 'Look Around',
+  },
   { key: 'slash', preset: 'preset:slash', aliases: ['preset:biped:slash'], label: 'Slash' },
 ])
 const MULTI_ANIMATION_VARIANT_PRIORITY = ['animation_model', 'animated_model']

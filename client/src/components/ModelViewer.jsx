@@ -138,6 +138,7 @@ const ANIMATION_CLIP_NAME_HINTS = Object.freeze({
   idle: ['idle', 'stand', 'rest'],
   walk: ['walk'],
   run: ['run', 'jog', 'sprint'],
+  look_around: ['look_around', 'lookaround', 'look around'],
   slash: ['slash', 'attack', 'swing'],
 })
 

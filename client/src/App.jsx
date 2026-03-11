@@ -92,6 +92,10 @@ const MODEL_VIEW_CAPTURE_SIZE = 128
 const MODEL_VIEW_CROP_MARGIN_RATIO = 0.06
 const MODEL_VIEW_ALPHA_THRESHOLD = 1
 const MODEL_VIEW_PIXEL_ART_MODE = true
+const DEFAULT_ANIMATED_SPRITE_DELAY_MS = 90
+const ANIMATED_SPRITE_DELAY_MS_BY_KEY = Object.freeze({
+  look_around: 140,
+})
 const VALID_SPRITE_SIZES = new Set([64, 84, 128, 256])
 const TRIPO_QUALITY_LABELS = {
   standard: 'Standard',
@@ -118,6 +122,12 @@ const STEP03_PREVIEW_OPTIONS = Object.freeze([
   { key: 'idle', label: 'Idle', preset: 'preset:biped:wait', isAnimated: true },
   { key: 'walk', label: 'Walk', preset: 'preset:walk', isAnimated: true },
   { key: 'run', label: 'Run', preset: 'preset:run', isAnimated: true },
+  {
+    key: 'look_around',
+    label: 'Look Around',
+    preset: 'preset:biped:look_around',
+    isAnimated: true,
+  },
   { key: 'slash', label: 'Slash', preset: 'preset:slash', isAnimated: true },
 ])
 const ANIMATION_PREVIEW_OPTIONS = Object.freeze(
@@ -150,6 +160,9 @@ const ANIMATION_KEY_BY_PRESET = Object.freeze(
     if (option.key === 'idle') {
       lookup['preset:idle'] = option.key
       lookup['preset:biped:idle'] = option.key
+    }
+    if (option.key === 'look_around') {
+      lookup['preset:look_around'] = option.key
     }
     return lookup
   }, {}),
@@ -230,6 +243,25 @@ const appendCacheBust = (url, cacheKey) => {
 
   const separator = url.includes('?') ? '&' : '?'
   return `${url}${separator}v=${cacheKey}`
+}
+
+export const resolveAnimatedSpriteDelayMs = (
+  animationKey,
+  fallbackDelayMs = DEFAULT_ANIMATED_SPRITE_DELAY_MS,
+) => {
+  const normalizedAnimationKey = String(animationKey || '').trim().toLowerCase()
+  const configuredDelayMs = Number(ANIMATED_SPRITE_DELAY_MS_BY_KEY[normalizedAnimationKey])
+
+  if (Number.isFinite(configuredDelayMs) && configuredDelayMs > 0) {
+    return configuredDelayMs
+  }
+
+  const normalizedFallbackDelayMs = Number(fallbackDelayMs)
+  if (Number.isFinite(normalizedFallbackDelayMs) && normalizedFallbackDelayMs > 0) {
+    return normalizedFallbackDelayMs
+  }
+
+  return DEFAULT_ANIMATED_SPRITE_DELAY_MS
 }
 
 const buildDefaultSpriteDirections = (cacheKey) =>
@@ -2117,37 +2149,44 @@ function App() {
     }
   }, [])
 
-  const buildViewerAnimationDirections = useCallback(async (capturedDirections, captureSize) => {
-    const resizedEntries = await Promise.all(
-      MODEL_VIEW_CAPTURE_ORDER.map(async (view) => {
-        const directionCapture = capturedDirections?.[view.key]
-        if (!directionCapture?.frameDataUrls?.length) {
-          return [view.key, null]
-        }
+  const buildViewerAnimationDirections = useCallback(
+    async (capturedDirections, captureSize, animationKey = '') => {
+      const resolvedDelayMs = resolveAnimatedSpriteDelayMs(animationKey)
+      const resizedEntries = await Promise.all(
+        MODEL_VIEW_CAPTURE_ORDER.map(async (view) => {
+          const directionCapture = capturedDirections?.[view.key]
+          if (!directionCapture?.frameDataUrls?.length) {
+            return [view.key, null]
+          }
 
-        const resizedFrames = await resizeFrameSequenceForModelView(
-          directionCapture.frameDataUrls,
-          captureSize,
-        )
+          const resizedFrames = await resizeFrameSequenceForModelView(
+            directionCapture.frameDataUrls,
+            captureSize,
+          )
 
-        return [
-          view.key,
-          {
-            previewDataUrl: resizedFrames[0] || '',
-            frameDataUrls: resizedFrames,
-            delayMs: directionCapture.delayMs,
-            source: 'viewer-animation-capture',
-            frames: {
-              count: resizedFrames.length,
-              format: 'base64-frame-sequence',
+          return [
+            view.key,
+            {
+              previewDataUrl: resizedFrames[0] || '',
+              frameDataUrls: resizedFrames,
+              delayMs: resolveAnimatedSpriteDelayMs(
+                animationKey,
+                directionCapture.delayMs ?? resolvedDelayMs,
+              ),
+              source: 'viewer-animation-capture',
+              frames: {
+                count: resizedFrames.length,
+                format: 'base64-frame-sequence',
+              },
             },
-          },
-        ]
-      }),
-    )
+          ]
+        }),
+      )
 
-    return Object.fromEntries(resizedEntries.filter((entry) => Boolean(entry[1])))
-  }, [])
+      return Object.fromEntries(resizedEntries.filter((entry) => Boolean(entry[1])))
+    },
+    [],
+  )
 
   const buildViewerSnapshotDirections = useCallback(async (captures, captureSize) => {
     const resizedEntries = await Promise.all(
@@ -2479,7 +2518,11 @@ function App() {
 
     try {
       const capturedDirections = await captureApi.captureAnimatedSpriteDirections()
-      const nextDirections = await buildViewerAnimationDirections(capturedDirections, captureSize)
+      const nextDirections = await buildViewerAnimationDirections(
+        capturedDirections,
+        captureSize,
+        animationKey,
+      )
 
       setDevSettings((currentValue) => ({
         ...currentValue,
@@ -2863,7 +2906,11 @@ function App() {
         }
 
         const capturedDirections = await captureApi.captureAnimatedSpriteDirections()
-        const directionBundle = await buildViewerAnimationDirections(capturedDirections, captureSize)
+        const directionBundle = await buildViewerAnimationDirections(
+          capturedDirections,
+          captureSize,
+          animationKey,
+        )
         nextAnimations[animationKey] = {
           animation: animationKey,
           label: ANIMATION_LABEL_BY_KEY[animationKey] || animationKey,

@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import App from '../App'
+import App, { resolveAnimatedSpriteDelayMs } from '../App'
 import {
   createTripoFrontBackTask,
   createTripoFrontTask,
@@ -404,6 +404,11 @@ describe('App', () => {
 
     expect(within(getStep04Panel()).getByRole('button', { name: 'Generate 2.5D' })).toBeDisabled()
     expect(within(getStep04Panel()).getByRole('button', { name: 'Download' })).toBeDisabled()
+  })
+
+  it('slows look around sprite timing without changing the default animated delay', () => {
+    expect(resolveAnimatedSpriteDelayMs('look_around', 90)).toBe(140)
+    expect(resolveAnimatedSpriteDelayMs('run', 90)).toBe(90)
   })
 
   it('unlocks step 02 only after Accept Portrait and does not auto-generate multiview', async () => {
@@ -990,6 +995,67 @@ describe('App', () => {
     await waitFor(() =>
       expect(createTripoRetargetTask).toHaveBeenCalledWith('rig-task-dev', {
         animations: ['preset:biped:run', 'preset:biped:slash'],
+      }),
+    )
+  })
+
+  it('recognizes look around in the configured animation list and sends it through Animate', async () => {
+    window.localStorage.setItem(
+      'ww-character-session-v1',
+      JSON.stringify({
+        prompt: 'pilot',
+        multiviewPrompt: 'mv',
+        devSettings: {
+          portraitAspectRatio: '1:1',
+          portraitPromptPreset: 'preset',
+          spriteSize: 64,
+          tripoAnimationMode: 'animated',
+          tripoRetargetAnimations: 'preset:biped:run preset:biped:look_around',
+          tripoRetargetAnimationName: '',
+          tripoMeshQuality: 'standard',
+          tripoTextureQuality: 'standard',
+          defaultSpritesEnabled: false,
+        },
+        portraitResult: {
+          imageDataUrl: makeDataUrl('portrait'),
+          promptUsed: 'pilot',
+          inputMode: 'prompt',
+          originalReferenceImageDataUrl: '',
+        },
+        multiviewResult: makeFullMultiviewResult(),
+        tripoJob: makeSuccessfulTask(
+          'rig-task-look-around',
+          'animate_rig',
+          'rigged_model',
+          '/api/tripo/tasks/rig-task-look-around/model?variant=rigged_model&animationMode=static',
+        ),
+        pipelineState: {
+          unlocked: { step1: true, step2: true, step3: true, step4: false },
+          approved: { step1: true, step2: true, step3: false, step4: false },
+        },
+        step03TaskState: {
+          modelTaskId: 'model-task-look-around',
+          rigTaskId: 'rig-task-look-around',
+          animateTaskId: '',
+        },
+      }),
+    )
+
+    createTripoRetargetTask.mockResolvedValue({ taskId: 'retarget-task-look-around', status: 'queued' })
+
+    render(<App />)
+    const user = userEvent.setup()
+    const step03Select = within(getStep03Panel()).getByLabelText('3D model animation preview')
+    const step04Select = within(getStep04Panel()).getByLabelText('Sprite animation preview')
+
+    expect(within(step03Select).getByRole('option', { name: 'Look Around' })).toBeInTheDocument()
+    expect(within(step04Select).getByRole('option', { name: 'Look Around' })).toBeInTheDocument()
+
+    await user.click(within(getStep03Panel()).getByRole('button', { name: 'Animate' }))
+
+    await waitFor(() =>
+      expect(createTripoRetargetTask).toHaveBeenCalledWith('rig-task-look-around', {
+        animations: ['preset:biped:run', 'preset:biped:look_around'],
       }),
     )
   })

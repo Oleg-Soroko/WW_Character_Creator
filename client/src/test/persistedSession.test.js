@@ -138,6 +138,34 @@ orthographic, neutral A-pose, light grey seamless background, sharp focus, No we
     )
   })
 
+  it('maps persisted look-around retarget outputs to the look_around animation key', () => {
+    window.localStorage.setItem(
+      'ww-character-session-v1',
+      JSON.stringify({
+        tripoJob: {
+          taskId: 'retarget-task',
+          taskType: 'animate_retarget',
+          status: 'success',
+          requestedAnimations: ['preset:biped:look_around'],
+          outputs: {
+            modelUrl: '/api/tripo/tasks/retarget-task/model?variant=animation_model',
+            downloadUrl: '/api/tripo/tasks/retarget-task/model?variant=animation_model',
+            variant: 'animation_model',
+            variants: {
+              animation_model: '/api/tripo/tasks/retarget-task/model?variant=animation_model',
+            },
+          },
+        },
+      }),
+    )
+
+    const session = loadPersistedSession()
+
+    expect(session?.tripoJob?.outputs?.animations?.look_around?.modelUrl).toBe(
+      '/api/tripo/tasks/retarget-task/model?variant=animation_model',
+    )
+  })
+
   it('preserves persisted dev pbr overrides', () => {
     window.localStorage.setItem(
       'ww-character-session-v1',
