@@ -11,7 +11,6 @@ import {
   createTripoTask,
   generateMultiview,
   generatePortrait,
-  generateSpriteRun,
   getHealth,
   getTripoTask,
   restartDevServer,
@@ -37,7 +36,6 @@ const originalImage = global.Image
 vi.mock('../api/characterApi', () => ({
   generatePortrait: vi.fn(),
   generateMultiview: vi.fn(),
-  generateSpriteRun: vi.fn(),
   getHealth: vi.fn(),
   createTripoTask: vi.fn(),
   createTripoFrontBackTask: vi.fn(),
@@ -359,11 +357,6 @@ describe('App', () => {
       normalizedReferenceImageDataUrl: null,
     })
     generateMultiview.mockResolvedValue(makeFullMultiviewResult())
-    generateSpriteRun.mockResolvedValue({
-      animation: 'walk',
-      spriteSize: 64,
-      directions: makeRequiredSpriteDirections(),
-    })
 
     createTripoTask.mockReset()
     createTripoFrontBackTask.mockReset()

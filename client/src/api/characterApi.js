@@ -134,15 +134,6 @@ export const restartDevServer = async () =>
     method: 'POST',
   })
 
-export const generateSpriteRun = async (payload) =>
-  requestJson('/api/sprites/run', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
-
 export const getHealth = async () =>
   requestJson('/api/health', {
     method: 'GET',

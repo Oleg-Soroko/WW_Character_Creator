@@ -53,6 +53,7 @@ The `DEV` panel exposes the manual and advanced controls if you need to override
 
 - `client/` - Vite + React frontend
 - `server/` - Express API for Gemini, Tripo, and PixelLab orchestration
+- `server/` - Express API for Gemini and Tripo orchestration
 - `WIP/` - scratch/work-in-progress files
 
 Important frontend files:
@@ -75,7 +76,6 @@ Important backend files:
 - API keys for:
   - Gemini
   - Tripo
-  - PixelLab
 
 ## Installation
 
@@ -102,7 +102,6 @@ Then fill in the required keys in `server/.env`:
 ```env
 GEMINI_API_KEY=...
 TRIPO_API_KEY=...
-PIXELLAB_API_KEY=...
 ```
 
 Useful defaults already included in the example:

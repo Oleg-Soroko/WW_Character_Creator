@@ -10,7 +10,6 @@ import {
   createTripoTask,
   generateMultiview,
   generatePortrait,
-  generateSpriteRun,
   getHealth,
   getTripoTask,
   restartDevServer,
@@ -2679,48 +2678,6 @@ function App() {
     })
   }
 
-  const handleGenerateSpriteRun = async () => {
-    if (!hasCompleteTurnaround(multiviewResult?.views)) {
-      setError('Generate full multiview (front, back, left, right) before creating sprite run.')
-      return
-    }
-
-    setError('')
-    setIsGeneratingSprite(true)
-
-    try {
-      const result = await generateSpriteRun({
-        views: {
-          front: multiviewResult.views.front.imageDataUrl,
-          back: multiviewResult.views.back.imageDataUrl,
-          left: multiviewResult.views.left.imageDataUrl,
-          right: multiviewResult.views.right.imageDataUrl,
-        },
-        spriteSize: Number(devSettings.spriteSize) || DEV_PRESETS.spriteSize,
-      })
-
-      setSpriteResult({
-        animation: LEGACY_ANIMATED_PREVIEW_KEY,
-        spriteSize: Number(result?.spriteSize) || normalizeSpriteSize(devSettings.spriteSize),
-        directions: result?.directions || null,
-        animations: result?.directions
-          ? {
-              [LEGACY_ANIMATED_PREVIEW_KEY]: {
-                animation: LEGACY_ANIMATED_PREVIEW_KEY,
-                label: ANIMATION_LABEL_BY_KEY[LEGACY_ANIMATED_PREVIEW_KEY],
-                preset: ANIMATION_PRESET_BY_KEY[LEGACY_ANIMATED_PREVIEW_KEY] || '',
-                directions: result.directions,
-              },
-            }
-          : null,
-      })
-    } catch (requestError) {
-      setError(requestError.message)
-    } finally {
-      setIsGeneratingSprite(false)
-    }
-  }
-
   const handleCaptureWalkSprites = async () => {
     const captureApi = viewerCaptureApiRef.current
 
@@ -4595,14 +4552,6 @@ function App() {
               </button>
             </div>
             <div className="action-row action-row--compact action-row--dev">
-              <button
-                type="button"
-                className="primary-button"
-                onClick={handleGenerateSpriteRun}
-                disabled={!hasCompleteTurnaround(multiviewResult?.views) || isGeneratingSprite}
-              >
-                {isGeneratingSprite ? 'Generating sprite run...' : 'Generate Sprite Run'}
-              </button>
               <button
                 type="button"
                 className="secondary-button"
