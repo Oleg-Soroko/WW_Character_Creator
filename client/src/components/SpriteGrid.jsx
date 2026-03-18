@@ -17,6 +17,16 @@ const SPRITE_360_SLOT = {
   label: '360',
   aliases: ['view_360', 'view360', '360'],
 }
+const SPRITE_360_FRAME_LABELS = [
+  'Front',
+  'FrontRight',
+  'Right',
+  'BackRight',
+  'Back',
+  'BackLeft',
+  'Left',
+  'FrontLeft',
+]
 
 const getFrames = (direction) => {
   if (Array.isArray(direction?.frameDataUrls) && direction.frameDataUrls.length > 0) {
@@ -91,18 +101,61 @@ const AnimatedSpriteTile = ({ direction, label, emptyCopy }) => {
   )
 }
 
-export function SpriteGrid({ directions, displayMode = 'view_360', embedded = false }) {
+const StaticSpriteFrameTile = ({ frameDataUrl, label }) =>
+  frameDataUrl ? (
+    <img src={frameDataUrl} alt={`${label} sprite frame`} />
+  ) : (
+    <div className="empty-state empty-state--compact">
+      <p>{`${label} frame will appear here.`}</p>
+    </div>
+  )
+
+export function SpriteGrid({
+  directions,
+  displayMode = 'view_360',
+  show360FramesAsTiles = false,
+  embedded = false,
+}) {
+  const shouldRender360Preview = displayMode === 'view_360' || show360FramesAsTiles
   const renderGrid = () => (
-    <div className="sprite-grid">
-      {displayMode === 'view_360' ? (
-        <article className="view-card" key={SPRITE_360_SLOT.key}>
-          <span className="view-card__label">{SPRITE_360_SLOT.label}</span>
-          <AnimatedSpriteTile
-            direction={resolveDirectionByAliases(directions, SPRITE_360_SLOT.aliases)}
-            label={SPRITE_360_SLOT.label}
-            emptyCopy="360 preview will appear here."
-          />
-        </article>
+    <div className={`sprite-grid${show360FramesAsTiles && shouldRender360Preview ? ' sprite-grid--frames' : ''}`}>
+      {shouldRender360Preview ? (
+        show360FramesAsTiles ? (
+          (() => {
+            const direction = resolveDirectionByAliases(directions, SPRITE_360_SLOT.aliases)
+            const frameDataUrls = getFrames(direction)
+            const labeledFrameEntries = SPRITE_360_FRAME_LABELS.map((frameLabel, frameIndex) => ({
+              frameLabel,
+              frameIndex,
+              frameDataUrl: frameDataUrls[frameIndex] || '',
+            }))
+            const extraFrameEntries = frameDataUrls
+              .slice(SPRITE_360_FRAME_LABELS.length)
+              .map((frameDataUrl, extraFrameIndex) => ({
+                frameLabel: `Frame ${String(SPRITE_360_FRAME_LABELS.length + extraFrameIndex + 1).padStart(2, '0')}`,
+                frameIndex: SPRITE_360_FRAME_LABELS.length + extraFrameIndex,
+                frameDataUrl: frameDataUrl || '',
+              }))
+
+            return [...labeledFrameEntries, ...extraFrameEntries].map(
+              ({ frameLabel, frameDataUrl, frameIndex }) => (
+                <article className="view-card" key={`${SPRITE_360_SLOT.key}-${frameIndex}`}>
+                  <span className="view-card__label">{frameLabel}</span>
+                  <StaticSpriteFrameTile frameDataUrl={frameDataUrl} label={frameLabel} />
+                </article>
+              ),
+            )
+          })()
+        ) : (
+          <article className="view-card" key={SPRITE_360_SLOT.key}>
+            <span className="view-card__label">{SPRITE_360_SLOT.label}</span>
+            <AnimatedSpriteTile
+              direction={resolveDirectionByAliases(directions, SPRITE_360_SLOT.aliases)}
+              label={SPRITE_360_SLOT.label}
+              emptyCopy="360 preview will appear here."
+            />
+          </article>
+        )
       ) : (
         SPRITE_VIEW_SLOTS.map(({ key, label, aliases }) => (
           <article className="view-card" key={key}>

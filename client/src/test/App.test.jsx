@@ -1407,6 +1407,216 @@ describe('App', () => {
     ])
   })
 
+  it('switches Character and Vechicle tabs and loads mode-specific DEV defaults', async () => {
+    render(<App />)
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'DEV' }))
+
+    const portraitPresetField = screen.getByRole('textbox', { name: 'Portrait Preset' })
+    const multiviewPresetField = screen.getByRole('textbox', { name: 'Multiview Preset' })
+
+    expect(screen.getByRole('tab', { name: 'Character' })).toHaveAttribute('aria-selected', 'true')
+    expect(portraitPresetField.value).toContain('Character identity portrait')
+
+    await user.clear(portraitPresetField)
+    await user.type(portraitPresetField, 'custom profile')
+    expect(portraitPresetField).toHaveValue('custom profile')
+
+    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+
+    expect(screen.getByRole('tab', { name: 'Vechicle' })).toHaveAttribute('aria-selected', 'true')
+    expect(portraitPresetField.value).toContain('Vehicle identity concept render')
+    expect(multiviewPresetField.value).toContain('One vehicle only')
+
+    await user.click(screen.getByRole('tab', { name: 'Character' }))
+
+    expect(screen.getByRole('tab', { name: 'Character' })).toHaveAttribute('aria-selected', 'true')
+    expect(portraitPresetField).toHaveValue('custom profile')
+  })
+
+  it('keeps prompt and reference image isolated per Character and Vechicle sessions', async () => {
+    render(<App />)
+    const user = userEvent.setup()
+
+    const characterPromptField = screen.getByLabelText('Character prompt')
+    await user.type(characterPromptField, 'character prompt value')
+
+    const referenceInput = document.querySelector('.reference-upload--compact input[type="file"]')
+    const characterReferenceFile = new File(['character-ref'], 'character-ref.png', {
+      type: 'image/png',
+    })
+    expect(referenceInput).not.toBeNull()
+    await user.upload(referenceInput, characterReferenceFile)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Change reference image' })).toBeInTheDocument(),
+    )
+
+    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+    expect(screen.getByLabelText('Character prompt')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Upload reference image' })).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Character prompt'), 'vehicle prompt value')
+
+    await user.click(screen.getByRole('tab', { name: 'Character' }))
+    expect(screen.getByLabelText('Character prompt')).toHaveValue('character prompt value')
+    expect(screen.getByRole('button', { name: 'Change reference image' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+    expect(screen.getByLabelText('Character prompt')).toHaveValue('vehicle prompt value')
+    expect(screen.getByRole('button', { name: 'Upload reference image' })).toBeInTheDocument()
+  })
+
+  it('hides step 03 and step 04 animation selectors in Vechicle mode', async () => {
+    render(<App />)
+    const user = userEvent.setup()
+
+    expect(within(getStep03Panel()).getByLabelText('3D model animation preview')).toBeInTheDocument()
+    expect(within(getStep04Panel()).getByLabelText('Sprite animation preview')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+
+    expect(within(getStep03Panel()).queryByLabelText('3D model animation preview')).toBeNull()
+    expect(within(getStep04Panel()).queryByLabelText('Sprite animation preview')).toBeNull()
+  })
+
+  it('hides AutoRig and Animate DEV actions in Vechicle mode', async () => {
+    render(<App />)
+    const user = userEvent.setup()
+
+    await openDevPanel(user)
+    expect(getDevActionButton('AutoRig')).toBeInTheDocument()
+    expect(getDevActionButton('Animate')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+
+    expect(within(getDevPanel()).queryByRole('button', { name: 'AutoRig' })).toBeNull()
+    expect(within(getDevPanel()).queryByRole('button', { name: 'Animate' })).toBeNull()
+    expect(getDevActionButton('Generate 3D')).toBeInTheDocument()
+  })
+
+  it('runs Vechicle Generate 3D as one model task and captures 360 direction frames', async () => {
+    createTripoTask.mockResolvedValue({ taskId: 'vehicle-model-task', status: 'queued' })
+    getTripoTask.mockImplementation(async (taskId) => {
+      if (taskId === 'vehicle-model-task') {
+        return makeSuccessfulTask(
+          'vehicle-model-task',
+          'multiview_to_model',
+          'model',
+          '/api/tripo/tasks/vehicle-model-task/model?variant=model&animationMode=static',
+        )
+      }
+
+      throw new Error(`Unexpected task id ${taskId}`)
+    })
+    viewerCaptureEightViewsMock.mockResolvedValue(makeCapturedModelViews())
+
+    render(<App />)
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+    await generatePfp(user)
+    await openDevPanel(user)
+    await user.click(getDevActionButton('Generate 3D'))
+
+    await waitFor(() => expect(createTripoTask).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(createTripoRigTask).not.toHaveBeenCalled())
+    await waitFor(() => expect(createTripoRetargetTask).not.toHaveBeenCalled())
+    await waitFor(() => expect(viewerCaptureEightViewsMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(viewerCaptureAnimatedSpriteDirectionsMock).not.toHaveBeenCalled())
+
+    const step04Panel = getStep04Panel()
+    await waitFor(() => expect(within(step04Panel).getAllByRole('img')).toHaveLength(8))
+    expect(within(step04Panel).getByText('Front')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('FrontRight')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('Back')).toBeInTheDocument()
+  })
+
+  it('renders 360 sprite frames as separate tiles in Vechicle mode', () => {
+    const frame1 = makeDataUrl('vehicle-360-f1')
+    const frame2 = makeDataUrl('vehicle-360-f2')
+    const frame3 = makeDataUrl('vehicle-360-f3')
+
+    window.localStorage.setItem('ww-character-active-mode-v1', 'vehicle')
+    window.localStorage.setItem(
+      'ww-character-session-v1:vehicle',
+      JSON.stringify({
+        creatorMode: 'vehicle',
+        devSettings: {
+          portraitAspectRatio: '1:1',
+          portraitPromptPreset: 'vehicle',
+          spriteSize: 64,
+          tripoAnimationMode: 'static',
+          tripoRetargetAnimationName: '',
+          tripoMeshQuality: 'detailed',
+          tripoTextureQuality: 'detailed',
+          defaultSpritesEnabled: false,
+        },
+        spriteResult: {
+          animation: 'view_360',
+          spriteSize: 64,
+          directions: {
+            view_360: {
+              previewDataUrl: frame1,
+              frameDataUrls: [frame1, frame2, frame3],
+            },
+          },
+          sharedDirections: {
+            view_360: {
+              previewDataUrl: frame1,
+              frameDataUrls: [frame1, frame2, frame3],
+            },
+          },
+        },
+      }),
+    )
+
+    render(<App />)
+
+    const step04Panel = getStep04Panel()
+    expect(within(step04Panel).queryByLabelText('Sprite animation preview')).toBeNull()
+    expect(within(step04Panel).getAllByRole('img')).toHaveLength(3)
+    expect(within(step04Panel).getByText('Front')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('FrontRight')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('Right')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('Back')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('BackLeft')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('Left')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('FrontLeft')).toBeInTheDocument()
+  })
+
+  it('shows vehicle sprite preview as 8 separate direction tiles before capture', () => {
+    window.localStorage.setItem('ww-character-active-mode-v1', 'vehicle')
+    window.localStorage.setItem(
+      'ww-character-session-v1:vehicle',
+      JSON.stringify({
+        creatorMode: 'vehicle',
+        devSettings: {
+          portraitAspectRatio: '1:1',
+          portraitPromptPreset: 'vehicle',
+          spriteSize: 64,
+          tripoAnimationMode: 'static',
+          tripoRetargetAnimationName: '',
+          tripoMeshQuality: 'detailed',
+          tripoTextureQuality: 'detailed',
+          defaultSpritesEnabled: false,
+        },
+      }),
+    )
+
+    render(<App />)
+
+    const step04Panel = getStep04Panel()
+    expect(within(step04Panel).getByText('Front')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('FrontRight')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('Right')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('BackRight')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('Back')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('BackLeft')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('Left')).toBeInTheDocument()
+    expect(within(step04Panel).getByText('FrontLeft')).toBeInTheDocument()
+  })
+
   it('defaults the DEV sprite size to 128 and exposes a 256 option', async () => {
     render(<App />)
     const user = userEvent.setup()

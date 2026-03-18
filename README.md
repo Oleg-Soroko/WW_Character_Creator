@@ -1,11 +1,13 @@
-# WW Character Creator
+# WW_Character_Creator
 
-WW Character Creator is a local web app for building a game-ready character pipeline from a text prompt and optional reference image.
+WW_Character_Creator is a local web app for building game-ready assets from a text prompt and optional reference image, with separate Character and Vechicle tabs that keep independent sessions and defaults.
 
 The main flow is:
 
 1. `Generate 2D` creates the portrait and then automatically generates the full multiview set.
-2. `Generate 3D` sends the multiview to Tripo, builds the 3D model, rigs it, runs the default animations, and generates sprite output.
+2. `Generate 3D` runs the tab-specific 3D pipeline:
+   Character: model -> auto-rig -> animation -> sprite output.
+   Vechicle: model -> 360 sprite capture (no animation pipeline).
 3. `Download` exports the final bundle when the pipeline is complete.
 
 ## What It Does
@@ -13,9 +15,10 @@ The main flow is:
 - Generates a portrait with Gemini.
 - Expands that portrait into front, back, left, and right multiview images.
 - Creates a textured 3D model through Tripo.
-- Runs auto-rigging and animation retargeting.
-- Captures 2.5D sprite directions and preview GIF assets.
+- Runs auto-rigging and animation retargeting for Character mode.
+- Captures 2.5D sprites, including vehicle 360 frames shown as separate tiles.
 - Lets you inspect the model in a Three.js viewer with DEV look controls.
+- Keeps Character and Vechicle prompts, references, and pipeline state isolated per tab.
 - Exports a downloadable package containing the generated assets.
 
 ## Current Default Flow
@@ -52,7 +55,6 @@ The `DEV` panel exposes the manual and advanced controls if you need to override
 ## Project Structure
 
 - `client/` - Vite + React frontend
-- `server/` - Express API for Gemini, Tripo, and PixelLab orchestration
 - `server/` - Express API for Gemini and Tripo orchestration
 - `WIP/` - scratch/work-in-progress files
 

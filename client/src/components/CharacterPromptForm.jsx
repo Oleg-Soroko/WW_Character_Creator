@@ -10,11 +10,16 @@ export function CharacterPromptForm({
   embedded = false,
   title = 'Identity Portrait',
   stepLabel = 'Step 01',
+  promptLabel = 'Character prompt',
+  promptPlaceholder = 'Stylized sci-fi ranger with ceramic shoulder plates, bright copper trims, soft freckles, calm expression...',
+  generateButtonLabel = 'Generate 2D',
+  generatingButtonLabel = 'Generating 2D...',
+  generateButtonAriaLabel = 'Generate 2D',
 }) {
   const formBody = (
     <>
       <label className="visually-hidden" htmlFor="character-prompt">
-        Character prompt
+        {promptLabel}
       </label>
       <div className="prompt-textarea-shell">
         <textarea
@@ -22,7 +27,7 @@ export function CharacterPromptForm({
           className="prompt-textarea"
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
-          placeholder="Stylized sci-fi ranger with ceramic shoulder plates, bright copper trims, soft freckles, calm expression..."
+          placeholder={promptPlaceholder}
           rows={7}
           disabled={isGeneratingPortrait}
         />
@@ -40,9 +45,9 @@ export function CharacterPromptForm({
           className="primary-button"
           onClick={onGeneratePortrait}
           disabled={isGeneratingPortrait}
-          aria-label="Generate 2D"
+          aria-label={generateButtonAriaLabel}
         >
-          {isGeneratingPortrait ? 'Generating 2D...' : 'Generate 2D'}
+          {isGeneratingPortrait ? generatingButtonLabel : generateButtonLabel}
         </button>
       </div>
     </>

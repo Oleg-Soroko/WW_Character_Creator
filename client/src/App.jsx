@@ -71,22 +71,128 @@ const AUTO_STEP03_TEXTURE_QUALITY = 'detailed'
 const AUTO_STEP03_FACE_LIMIT = 64000
 const AUTO_PIPELINE_POLL_TIMEOUT_MS = 600000
 
-const DEV_PRESETS = {
-  portraitAspectRatio: '1:1',
-  portraitPreset:
-    'Character identity portrait front with torso and head in frame centered framing, Grey seamless background, no cape, no weapon',
-  multiviewPreset: DEFAULT_MULTIVIEW_PROMPT,
-  spriteSize: 128,
-  tripoAnimationMode: 'static',
-  tripoPbr: false,
-  tripoRetargetAnimations: DEFAULT_RETARGET_ANIMATION_INPUT,
-  tripoRetargetAnimationName: '',
-  tripoMeshQuality: 'detailed',
-  tripoTextureQuality: 'detailed',
-  tripoFaceLimit: '64000',
-  defaultSpritesEnabled: false,
-  viewerLook: DEFAULT_VIEWER_LOOK_SETTINGS,
+const CREATOR_MODE_CHARACTER = 'character'
+const CREATOR_MODE_VEHICLE = 'vehicle'
+const DEFAULT_CREATOR_MODE = CREATOR_MODE_CHARACTER
+const ACTIVE_CREATOR_MODE_STORAGE_KEY = 'ww-character-active-mode-v1'
+const MODE_SCOPE_ABORT_ERROR = '__mode_scope_switched__'
+const DEFAULT_VEHICLE_MULTIVIEW_PROMPT =
+  'One vehicle only, full vehicle in frame, front view, orthographic, neutral white seamless background'
+const LEGACY_VEHICLE_MULTIVIEW_PROMPT =
+  'One vehicle only, full vehicle in frame, front view, back view, left view, right view, orthographic, neutral white seamless background'
+
+const DEV_PRESET_PROFILES = Object.freeze({
+  [CREATOR_MODE_CHARACTER]: Object.freeze({
+    portraitAspectRatio: '1:1',
+    portraitPreset:
+      'Character identity portrait front with torso and head in frame centered framing, Grey seamless background, no cape, no weapon',
+    multiviewPreset: DEFAULT_MULTIVIEW_PROMPT,
+    spriteSize: 128,
+    tripoAnimationMode: 'static',
+    tripoPbr: false,
+    tripoRetargetAnimations: DEFAULT_RETARGET_ANIMATION_INPUT,
+    tripoRetargetAnimationName: '',
+    tripoMeshQuality: 'detailed',
+    tripoTextureQuality: 'detailed',
+    tripoFaceLimit: '64000',
+    defaultSpritesEnabled: false,
+    viewerLook: DEFAULT_VIEWER_LOOK_SETTINGS,
+  }),
+  [CREATOR_MODE_VEHICLE]: Object.freeze({
+    portraitAspectRatio: '1:1',
+    portraitPreset:
+      'Vehicle identity concept render, one vehicle only, full vehicle centered view, clean studio background, no text, no people',
+    multiviewPreset: DEFAULT_VEHICLE_MULTIVIEW_PROMPT,
+    spriteSize: 128,
+    tripoAnimationMode: 'static',
+    tripoPbr: false,
+    tripoRetargetAnimations: DEFAULT_RETARGET_ANIMATION_INPUT,
+    tripoRetargetAnimationName: '',
+    tripoMeshQuality: 'detailed',
+    tripoTextureQuality: 'detailed',
+    tripoFaceLimit: '64000',
+    defaultSpritesEnabled: false,
+    viewerLook: DEFAULT_VIEWER_LOOK_SETTINGS,
+  }),
+})
+const DEV_PRESETS = DEV_PRESET_PROFILES[DEFAULT_CREATOR_MODE]
+
+const resolveCreatorMode = (value) =>
+  value === CREATOR_MODE_VEHICLE ? CREATOR_MODE_VEHICLE : CREATOR_MODE_CHARACTER
+
+const normalizePromptValue = (value) => String(value || '').trim().replace(/\s+/g, ' ')
+
+const resolveModeMultiviewPrompt = (creatorMode, storedPrompt = '', fallbackPrompt = '') => {
+  const normalizedMode = resolveCreatorMode(creatorMode)
+  const trimmedStoredPrompt = String(storedPrompt || '').trim()
+  if (!trimmedStoredPrompt) {
+    return String(fallbackPrompt || '').trim()
+  }
+
+  if (normalizedMode === CREATOR_MODE_VEHICLE) {
+    const normalizedStoredPrompt = normalizePromptValue(trimmedStoredPrompt).toLowerCase()
+    const normalizedLegacyPrompt = normalizePromptValue(LEGACY_VEHICLE_MULTIVIEW_PROMPT).toLowerCase()
+    if (
+      normalizedStoredPrompt === normalizedLegacyPrompt ||
+      normalizedStoredPrompt.includes('front view, back view, left view, right view')
+    ) {
+      return DEFAULT_VEHICLE_MULTIVIEW_PROMPT
+    }
+  }
+
+  return trimmedStoredPrompt
 }
+
+const getStoredActiveCreatorMode = () => {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return ''
+  }
+
+  return String(window.localStorage.getItem(ACTIVE_CREATOR_MODE_STORAGE_KEY) || '')
+}
+
+const isModeScopeAbortError = (error) => String(error?.message || error || '') === MODE_SCOPE_ABORT_ERROR
+
+const getDevPresetProfile = (creatorMode = DEFAULT_CREATOR_MODE) =>
+  DEV_PRESET_PROFILES[resolveCreatorMode(creatorMode)] || DEV_PRESETS
+
+const BASE_WORKSPACE_PANEL_PROFILE = Object.freeze({
+  step01AriaLabel: 'Step 01 Portrait Panel',
+  step01Label: 'Step 01',
+  step01Title: 'Portrait',
+  step01PromptLabel: 'Character prompt',
+  step01PromptPlaceholder:
+    'Stylized sci-fi ranger with ceramic shoulder plates, bright copper trims, soft freckles, calm expression...',
+  step01GenerateLabel: 'Generate 2D',
+  step01GeneratingLabel: 'Generating 2D...',
+  step01GenerateAriaLabel: 'Generate 2D',
+  step02AriaLabel: 'Step 02 Multiview Panel',
+  step02Label: 'Step 02',
+  step02Title: 'Multiview',
+  step02Generate3dLabel: 'Generate 3D',
+  step02Generating3dLabel: 'Running 3D...',
+  step03AriaLabel: 'Step 03 3D Model Panel',
+  step03Label: 'Step 03',
+  step03Title: '3D Model',
+  step03PreviewAriaLabel: '3D model animation preview',
+  step04AriaLabel: 'Step 04 Sprite Panel',
+  step04Label: 'Step 04',
+  step04Title: 'Sprite',
+  step04PreviewAriaLabel: 'Sprite animation preview',
+  step04DownloadLabel: 'Download',
+  step04PreparingDownloadLabel: 'Preparing...',
+})
+
+const WORKSPACE_PANEL_PROFILES = Object.freeze({
+  [CREATOR_MODE_CHARACTER]: BASE_WORKSPACE_PANEL_PROFILE,
+  [CREATOR_MODE_VEHICLE]: Object.freeze({
+    ...BASE_WORKSPACE_PANEL_PROFILE,
+  }),
+})
+
+const getWorkspacePanelProfile = (creatorMode = DEFAULT_CREATOR_MODE) =>
+  WORKSPACE_PANEL_PROFILES[resolveCreatorMode(creatorMode)] ||
+  WORKSPACE_PANEL_PROFILES[DEFAULT_CREATOR_MODE]
 
 const MULTIVIEW_ORDER = ['front', 'back', 'left', 'right']
 const MODEL_VIEW_CAPTURE_ORDER = [
@@ -888,6 +994,8 @@ const hasRequiredSpriteBundle = (spritePayload, fallbackAnimationKeys = []) => {
   )
 }
 
+const hasRequiredVehicleSpriteBundle = (spritePayload) => hasSharedSpritePreview(spritePayload)
+
 const hasRequiredAnimationCatalogOutput = (
   job,
   fallbackAnimationPresets = DEFAULT_RETARGET_ANIMATION_INPUT,
@@ -1256,46 +1364,73 @@ const parseTripoFaceLimit = (value) => {
   return Math.floor(parsedValue)
 }
 
+const buildDevSettingsFromPreset = (presetProfile = DEV_PRESETS, storedDevSettings = {}) => ({
+  portraitAspectRatio: storedDevSettings?.portraitAspectRatio || presetProfile.portraitAspectRatio,
+  portraitPromptPreset: storedDevSettings?.portraitPromptPreset || presetProfile.portraitPreset,
+  spriteSize: Number(storedDevSettings?.spriteSize) || presetProfile.spriteSize,
+  tripoAnimationMode: storedDevSettings?.tripoAnimationMode || presetProfile.tripoAnimationMode,
+  tripoPbr: normalizeTripoPbr(storedDevSettings?.tripoPbr, presetProfile.tripoPbr),
+  tripoRetargetAnimations:
+    storedDevSettings?.tripoRetargetAnimations || presetProfile.tripoRetargetAnimations,
+  tripoRetargetAnimationName:
+    storedDevSettings?.tripoRetargetAnimationName || presetProfile.tripoRetargetAnimationName,
+  tripoMeshQuality: normalizeTripoQuality(
+    storedDevSettings?.tripoMeshQuality,
+    presetProfile.tripoMeshQuality,
+  ),
+  tripoTextureQuality: normalizeTripoQuality(
+    storedDevSettings?.tripoTextureQuality,
+    presetProfile.tripoTextureQuality,
+  ),
+  tripoFaceLimit: resolveStoredTripoFaceLimitInput(
+    storedDevSettings?.tripoFaceLimit,
+    presetProfile.tripoFaceLimit,
+  ),
+  defaultSpritesEnabled:
+    typeof storedDevSettings?.defaultSpritesEnabled === 'boolean'
+      ? storedDevSettings.defaultSpritesEnabled
+      : presetProfile.defaultSpritesEnabled,
+  viewerLook: normalizeViewerLookSettings(storedDevSettings?.viewerLook, presetProfile.viewerLook),
+})
+
 function App() {
-  const [initialSession] = useState(() => loadPersistedSession())
+  const [initialBootstrap] = useState(() => {
+    const storedActiveMode = resolveCreatorMode(getStoredActiveCreatorMode())
+    const scopedSession = loadPersistedSession(storedActiveMode)
+
+    if (scopedSession) {
+      return {
+        creatorMode: storedActiveMode,
+        session: scopedSession,
+      }
+    }
+
+    const fallbackSession = loadPersistedSession()
+    const fallbackMode = resolveCreatorMode(fallbackSession?.creatorMode || storedActiveMode)
+    const fallbackScopedSession = loadPersistedSession(fallbackMode)
+
+    return {
+      creatorMode: fallbackMode,
+      session: fallbackScopedSession || fallbackSession,
+    }
+  })
+  const [initialSession] = useState(() => initialBootstrap.session)
+  const initialCreatorMode = initialBootstrap.creatorMode
+  const initialDevPresetProfile = getDevPresetProfile(initialCreatorMode)
+  const [creatorMode, setCreatorMode] = useState(initialCreatorMode)
   const [prompt, setPrompt] = useState(() => initialSession?.prompt || '')
   const [referenceImage, setReferenceImage] = useState(null)
-  const [devSettings, setDevSettings] = useState(() => ({
-    portraitAspectRatio: initialSession?.devSettings?.portraitAspectRatio || DEV_PRESETS.portraitAspectRatio,
-    portraitPromptPreset:
-      initialSession?.devSettings?.portraitPromptPreset || DEV_PRESETS.portraitPreset,
-    spriteSize: Number(initialSession?.devSettings?.spriteSize) || DEV_PRESETS.spriteSize,
-    tripoAnimationMode:
-      initialSession?.devSettings?.tripoAnimationMode || DEV_PRESETS.tripoAnimationMode,
-    tripoPbr: normalizeTripoPbr(initialSession?.devSettings?.tripoPbr, DEV_PRESETS.tripoPbr),
-    tripoRetargetAnimations:
-      initialSession?.devSettings?.tripoRetargetAnimations || DEV_PRESETS.tripoRetargetAnimations,
-    tripoRetargetAnimationName:
-      initialSession?.devSettings?.tripoRetargetAnimationName || DEV_PRESETS.tripoRetargetAnimationName,
-    tripoMeshQuality: normalizeTripoQuality(
-      initialSession?.devSettings?.tripoMeshQuality,
-      DEV_PRESETS.tripoMeshQuality,
-    ),
-    tripoTextureQuality: normalizeTripoQuality(
-      initialSession?.devSettings?.tripoTextureQuality,
-      DEV_PRESETS.tripoTextureQuality,
-    ),
-    tripoFaceLimit: resolveStoredTripoFaceLimitInput(
-      initialSession?.devSettings?.tripoFaceLimit,
-      DEV_PRESETS.tripoFaceLimit,
-    ),
-    defaultSpritesEnabled:
-      typeof initialSession?.devSettings?.defaultSpritesEnabled === 'boolean'
-        ? initialSession.devSettings.defaultSpritesEnabled
-        : DEV_PRESETS.defaultSpritesEnabled,
-    viewerLook: normalizeViewerLookSettings(
-      initialSession?.devSettings?.viewerLook,
-      DEV_PRESETS.viewerLook,
-    ),
-  }))
+  const [devSettings, setDevSettings] = useState(() =>
+    buildDevSettingsFromPreset(initialDevPresetProfile, initialSession?.devSettings),
+  )
   const [portraitResult, setPortraitResult] = useState(() => initialSession?.portraitResult || null)
   const [multiviewPrompt, setMultiviewPrompt] = useState(
-    () => initialSession?.multiviewPrompt || DEFAULT_MULTIVIEW_PROMPT,
+    () =>
+      resolveModeMultiviewPrompt(
+        initialCreatorMode,
+        initialSession?.multiviewPrompt,
+        initialDevPresetProfile.multiviewPreset,
+      ),
   )
   const [multiviewResult, setMultiviewResult] = useState(() => initialSession?.multiviewResult || null)
   const [spriteResult, setSpriteResult] = useState(() => initialSession?.spriteResult || null)
@@ -1356,6 +1491,27 @@ function App() {
   const step01PanelRef = useRef(null)
   const step02PanelRef = useRef(null)
   const step03BoundaryRef = useRef(null)
+  const referenceImageByModeRef = useRef({
+    [CREATOR_MODE_CHARACTER]: null,
+    [CREATOR_MODE_VEHICLE]: null,
+  })
+  const creatorModeRef = useRef(initialCreatorMode)
+  const isCreatorModeActive = useCallback(
+    (modeScope = creatorModeRef.current) =>
+      resolveCreatorMode(modeScope) === resolveCreatorMode(creatorModeRef.current),
+    [],
+  )
+  const assertCreatorModeActive = useCallback(
+    (modeScope = creatorModeRef.current) => {
+      if (!isCreatorModeActive(modeScope)) {
+        throw new Error(MODE_SCOPE_ABORT_ERROR)
+      }
+    },
+    [isCreatorModeActive],
+  )
+  const activeDevPresetProfile = getDevPresetProfile(creatorMode)
+  const activeWorkspacePanelProfile = getWorkspacePanelProfile(creatorMode)
+  const isVehicleMode = creatorMode === CREATOR_MODE_VEHICLE
   const configuredRetargetAnimations = resolveConfiguredRetargetAnimations(
     devSettings.tripoRetargetAnimations,
   )
@@ -1478,23 +1634,31 @@ function App() {
         (resolvedAnimatedPreviewKey === legacyAnimatedPreviewKey
           ? tripoJob.outputs?.downloadUrl || ''
           : '')
-  const availableSpritePreviewKeys = getAvailableSpritePreviewKeys(
-    spriteResult,
-    fallbackSpriteAnimationKeys,
-  )
+  const availableSpritePreviewKeys = isVehicleMode
+    ? hasSharedSpritePreview(spriteResult)
+      ? [SPRITE_360_PREVIEW_KEY]
+      : []
+    : getAvailableSpritePreviewKeys(
+        spriteResult,
+        fallbackSpriteAnimationKeys,
+      )
   const availableSpritePreviewKeysKey = availableSpritePreviewKeys.join('|')
-  const resolvedSpritePreviewMode = availableSpritePreviewKeys.includes(spritePreviewMode)
-    ? spritePreviewMode
-    : availableSpritePreviewKeys.includes(DEFAULT_SPRITE_PREVIEW_KEY)
-      ? DEFAULT_SPRITE_PREVIEW_KEY
-      : availableSpritePreviewKeys.includes(configuredAnimationPreviewKey)
-        ? configuredAnimationPreviewKey
-        : availableSpritePreviewKeys[0] || DEFAULT_SPRITE_PREVIEW_KEY
-  const activeSpriteDirections = devSettings.defaultSpritesEnabled
-    ? buildDefaultSpriteDirections(defaultSpritesCacheKey)
-    : resolvedSpritePreviewMode === SPRITE_360_PREVIEW_KEY
-      ? resolveSharedSpriteDirections(spriteResult)
-      : resolveSpriteAnimationDirections(spriteResult, resolvedSpritePreviewMode)
+  const resolvedSpritePreviewMode = isVehicleMode
+    ? SPRITE_360_PREVIEW_KEY
+    : availableSpritePreviewKeys.includes(spritePreviewMode)
+      ? spritePreviewMode
+      : availableSpritePreviewKeys.includes(DEFAULT_SPRITE_PREVIEW_KEY)
+        ? DEFAULT_SPRITE_PREVIEW_KEY
+        : availableSpritePreviewKeys.includes(configuredAnimationPreviewKey)
+          ? configuredAnimationPreviewKey
+          : availableSpritePreviewKeys[0] || DEFAULT_SPRITE_PREVIEW_KEY
+  const activeSpriteDirections = isVehicleMode
+    ? resolveSharedSpriteDirections(spriteResult)
+    : devSettings.defaultSpritesEnabled
+      ? buildDefaultSpriteDirections(defaultSpritesCacheKey)
+      : resolvedSpritePreviewMode === SPRITE_360_PREVIEW_KEY
+        ? resolveSharedSpriteDirections(spriteResult)
+        : resolveSpriteAnimationDirections(spriteResult, resolvedSpritePreviewMode)
   const isStep02Unlocked = pipelineState.unlocked.step2
   const isStep03Unlocked = pipelineState.unlocked.step3
   const isStep04Unlocked = pipelineState.unlocked.step4
@@ -1533,7 +1697,9 @@ function App() {
       tripoJob.status === 'success' &&
       ['animate_retarget', 'animate_model'].includes(getNormalizedTaskType(tripoJob.taskType)),
   )
-  const hasStep04Output = hasRequiredSpriteBundle(spriteResult, requiredSpriteAnimationKeys)
+  const hasStep04Output = isVehicleMode
+    ? hasRequiredVehicleSpriteBundle(spriteResult)
+    : hasRequiredSpriteBundle(spriteResult, requiredSpriteAnimationKeys)
   const canRunStep02Generation =
     isStep02Unlocked && hasPortraitStepReady && !turnaroundGenerationMode && !isGeneratingPortrait
   const canRunStep03Generation =
@@ -1560,7 +1726,9 @@ function App() {
     !isCreatingRetargetTask
   const canRunStep04Generation =
     isStep04Unlocked &&
-    hasRequiredAnimationCatalogOutput(tripoJob, configuredRetargetAnimations) &&
+    (isVehicleMode
+      ? Boolean(aposePreviewModelUrl)
+      : hasRequiredAnimationCatalogOutput(tripoJob, configuredRetargetAnimations)) &&
     !isGeneratingSprite &&
     !isCapturingWalkSprites &&
     !isPreparingDownloadBundle
@@ -1742,57 +1910,28 @@ function App() {
   useEffect(() => {
     let isCancelled = false
 
-    loadPersistedRichSession()
+    loadPersistedRichSession(creatorMode)
       .then((session) => {
         if (!session || isCancelled) {
           return
         }
 
+        const sessionDevPresetProfile = getDevPresetProfile(creatorMode)
         setPrompt((currentPrompt) => session.prompt || currentPrompt)
         setMultiviewPrompt(
           (currentMultiviewPrompt) =>
-            session.multiviewPrompt || currentMultiviewPrompt || DEFAULT_MULTIVIEW_PROMPT,
+            resolveModeMultiviewPrompt(
+              creatorMode,
+              session.multiviewPrompt,
+              currentMultiviewPrompt || sessionDevPresetProfile.multiviewPreset,
+            ),
         )
-        setDevSettings((currentDevSettings) => ({
-          portraitAspectRatio:
-            session.devSettings?.portraitAspectRatio || currentDevSettings.portraitAspectRatio,
-          portraitPromptPreset:
-            session.devSettings?.portraitPromptPreset || currentDevSettings.portraitPromptPreset,
-          spriteSize:
-            Number(session.devSettings?.spriteSize) || currentDevSettings.spriteSize,
-          tripoAnimationMode:
-            session.devSettings?.tripoAnimationMode || currentDevSettings.tripoAnimationMode,
-          tripoPbr: normalizeTripoPbr(
-            session.devSettings?.tripoPbr,
-            currentDevSettings.tripoPbr,
-          ),
-          tripoRetargetAnimations:
-            session.devSettings?.tripoRetargetAnimations ??
-            currentDevSettings.tripoRetargetAnimations,
-          tripoRetargetAnimationName:
-            session.devSettings?.tripoRetargetAnimationName ??
-            currentDevSettings.tripoRetargetAnimationName,
-          tripoMeshQuality: normalizeTripoQuality(
-            session.devSettings?.tripoMeshQuality,
-            currentDevSettings.tripoMeshQuality,
-          ),
-          tripoTextureQuality: normalizeTripoQuality(
-            session.devSettings?.tripoTextureQuality,
-            currentDevSettings.tripoTextureQuality,
-          ),
-          tripoFaceLimit: resolveStoredTripoFaceLimitInput(
-            session.devSettings?.tripoFaceLimit,
-            currentDevSettings.tripoFaceLimit,
-          ),
-          defaultSpritesEnabled:
-            typeof session.devSettings?.defaultSpritesEnabled === 'boolean'
-              ? session.devSettings.defaultSpritesEnabled
-              : currentDevSettings.defaultSpritesEnabled,
-          viewerLook: normalizeViewerLookSettings(
-            session.devSettings?.viewerLook,
-            currentDevSettings.viewerLook,
-          ),
-        }))
+        setDevSettings((currentDevSettings) =>
+          buildDevSettingsFromPreset(sessionDevPresetProfile, {
+            ...currentDevSettings,
+            ...(session.devSettings || {}),
+          }),
+        )
         setPortraitResult((currentPortraitResult) =>
           session.portraitResult?.imageDataUrl ? session.portraitResult : currentPortraitResult,
         )
@@ -1843,7 +1982,7 @@ function App() {
     return () => {
       isCancelled = true
     }
-  }, [])
+  }, [creatorMode])
 
   useEffect(() => {
     if (!hasHydratedPersistedSession) {
@@ -1851,6 +1990,7 @@ function App() {
     }
 
     savePersistedSession({
+      creatorMode,
       prompt,
       multiviewPrompt,
       devSettings,
@@ -1862,8 +2002,9 @@ function App() {
       tripoJob,
       pipelineState,
       step03TaskState,
-    })
+    }, creatorMode)
   }, [
+    creatorMode,
     currentRunId,
     devSettings,
     hasHydratedPersistedSession,
@@ -1877,6 +2018,22 @@ function App() {
     step03TaskState,
     tripoJob,
   ])
+
+  useEffect(() => {
+    creatorModeRef.current = creatorMode
+  }, [creatorMode])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return
+    }
+
+    window.localStorage.setItem(ACTIVE_CREATOR_MODE_STORAGE_KEY, creatorMode)
+  }, [creatorMode])
+
+  useEffect(() => {
+    referenceImageByModeRef.current[creatorMode] = referenceImage || null
+  }, [creatorMode, referenceImage])
 
   useEffect(() => {
     setPipelineState((currentState) => {
@@ -2045,7 +2202,15 @@ function App() {
     [updatePipelineState],
   )
 
-  const applyTripoJobUpdate = (nextJob, runId = currentRunId) => {
+  const applyTripoJobUpdate = (
+    nextJob,
+    runId = currentRunId,
+    modeScope = creatorModeRef.current,
+  ) => {
+    if (!isCreatorModeActive(modeScope)) {
+      return false
+    }
+
     setTripoJob((currentJob) => ({
       ...currentJob,
       ...nextJob,
@@ -2084,6 +2249,8 @@ function App() {
         }),
       )
     }
+
+    return true
   }
 
   const refreshTripoJob = async (taskId, animationMode = '') => {
@@ -2099,8 +2266,13 @@ function App() {
       fallbackTaskType = '',
       fallbackSourceTaskId = '',
       requestedAnimations = [],
+      modeScope = creatorModeRef.current,
     } = {},
   ) => {
+    if (!isCreatorModeActive(modeScope)) {
+      return null
+    }
+
     const nextJob = {
       taskId: result.taskId,
       taskType: result.taskType || fallbackTaskType,
@@ -2123,6 +2295,8 @@ function App() {
         }),
       )
     }
+
+    return nextJob
   }
 
   const buildGifBlobFromFrames = useCallback(async ({ frameDataUrls, width, height, delayMs = 110 }) => {
@@ -2449,12 +2623,17 @@ function App() {
 
       while (Date.now() - startedAt < timeoutMs) {
         const captureApi = viewerCaptureApiRef.current
+        if (!captureApi) {
+          await sleep(50)
+          continue
+        }
+
         const hasExpectedModelUrl =
-          !expectedModelUrl || captureApi?.getCurrentModelUrl?.() === expectedModelUrl
-        const currentAnimationSelectionKey = captureApi?.getCurrentAnimationSelection?.()
+          !expectedModelUrl || captureApi.getCurrentModelUrl?.() === expectedModelUrl
+        const currentAnimationSelectionKey = captureApi.getCurrentAnimationSelection?.()
         const hasExpectedAnimationSelection =
           !expectedAnimationSelectionKey ||
-          typeof captureApi?.getCurrentAnimationSelection !== 'function' ||
+          typeof captureApi.getCurrentAnimationSelection !== 'function' ||
           currentAnimationSelectionKey === expectedAnimationSelectionKey
 
         if (hasExpectedModelUrl && hasExpectedAnimationSelection) {
@@ -2480,6 +2659,7 @@ function App() {
       return undefined
     }
 
+    const modeScope = creatorMode
     let isCancelled = false
     let isPolling = false
 
@@ -2495,13 +2675,13 @@ function App() {
           tripoJob.taskId,
           tripoJob.animationMode || devSettings.tripoAnimationMode,
         )
-        if (isCancelled) {
+        if (isCancelled || !isCreatorModeActive(modeScope)) {
           return
         }
 
-        applyTripoJobUpdate(nextJob, currentRunId)
+        applyTripoJobUpdate(nextJob, currentRunId, modeScope)
       } catch (pollError) {
-        if (!isCancelled) {
+        if (!isCancelled && isCreatorModeActive(modeScope)) {
           setTripoJob((currentJob) => ({
             ...currentJob,
             status: 'failed',
@@ -2528,6 +2708,8 @@ function App() {
     tripoJob.taskId,
     tripoJob.taskType,
     tripoJob.status,
+    creatorMode,
+    isCreatorModeActive,
   ])
 
   const runMultiviewGeneration = async ({
@@ -2535,7 +2717,10 @@ function App() {
     portraitSource = portraitResult,
     runIdForHistory = currentRunId,
     resetDownstream = true,
+    modeScope = creatorMode,
   } = {}) => {
+    assertCreatorModeActive(modeScope)
+
     if (!portraitSource?.imageDataUrl) {
       setError('Generate a portrait first to establish the character identity.')
       return null
@@ -2561,6 +2746,7 @@ function App() {
         multiviewPrompt,
         mode,
       })
+      assertCreatorModeActive(modeScope)
 
       setMultiviewResult(result)
       if (runIdForHistory) {
@@ -2579,15 +2765,21 @@ function App() {
       generationStatus = 'success'
       return result
     } catch (requestError) {
+      if (isModeScopeAbortError(requestError)) {
+        return null
+      }
       setError(requestError.message)
       return null
     } finally {
-      setTurnaroundGenerationMode('')
-      recordTaskTiming('multiview', startedAt, generationStatus)
+      if (isCreatorModeActive(modeScope)) {
+        setTurnaroundGenerationMode('')
+        recordTaskTiming('multiview', startedAt, generationStatus)
+      }
     }
   }
 
   const handleGeneratePortrait = async () => {
+    const modeScope = creatorMode
     if (!prompt.trim() && !referenceImage?.file) {
       setError('Add a prompt, a reference image, or both before generating a portrait.')
       return
@@ -2614,6 +2806,7 @@ function App() {
         portraitAspectRatio: devSettings.portraitAspectRatio,
         portraitPromptPreset: devSettings.portraitPromptPreset,
       })
+      assertCreatorModeActive(modeScope)
       runId = createRunId()
       nextPortrait = {
         imageDataUrl: result.imageDataUrl,
@@ -2637,6 +2830,9 @@ function App() {
       ])
       generationStatus = 'success'
     } catch (requestError) {
+      if (isModeScopeAbortError(requestError)) {
+        return
+      }
       setError(requestError.message)
       setIsGeneratingPortrait(false)
       recordTaskTiming('portrait', startedAt, generationStatus)
@@ -2652,9 +2848,12 @@ function App() {
       mode: 'full',
       portraitSource: nextPortrait,
       runIdForHistory: runId,
+      modeScope,
     })
 
-    setIsGeneratingPortrait(false)
+    if (isCreatorModeActive(modeScope)) {
+      setIsGeneratingPortrait(false)
+    }
   }
 
   const handleGenerateStep02 = async () => {
@@ -2666,6 +2865,7 @@ function App() {
       mode: 'full',
       portraitSource: portraitResult,
       runIdForHistory: currentRunId,
+      modeScope: creatorMode,
     })
   }
 
@@ -2675,6 +2875,7 @@ function App() {
       portraitSource: portraitResult,
       runIdForHistory: currentRunId,
       resetDownstream: false,
+      modeScope: creatorMode,
     })
   }
 
@@ -2735,6 +2936,7 @@ function App() {
   }
 
   const handleCreateModel = async () => {
+    const modeScope = creatorMode
     if (!multiviewResult?.views) {
       setError('Generate the turnaround views before creating the 3D model.')
       return
@@ -2756,19 +2958,27 @@ function App() {
         pbr: devSettings.tripoPbr,
         faceLimit: resolvedTripoFaceLimit,
       })
+      assertCreatorModeActive(modeScope)
       updateModelPreviewMode('apose')
       applyTripoTaskStart(result, {
         animationMode: 'static',
         fallbackTaskType: 'multiview_to_model',
+        modeScope,
       })
     } catch (requestError) {
+      if (isModeScopeAbortError(requestError)) {
+        return
+      }
       setError(requestError.message)
     } finally {
-      setIsCreatingModel(false)
+      if (isCreatorModeActive(modeScope)) {
+        setIsCreatingModel(false)
+      }
     }
   }
 
   const handleCreateFrontModel = async () => {
+    const modeScope = creatorMode
     const frontImageDataUrl = multiviewResult?.views?.front?.imageDataUrl
 
     if (!frontImageDataUrl) {
@@ -2787,19 +2997,27 @@ function App() {
         pbr: devSettings.tripoPbr,
         faceLimit: resolvedTripoFaceLimit,
       })
+      assertCreatorModeActive(modeScope)
       updateModelPreviewMode('apose')
       applyTripoTaskStart(result, {
         animationMode: 'static',
         fallbackTaskType: 'image_to_model',
+        modeScope,
       })
     } catch (requestError) {
+      if (isModeScopeAbortError(requestError)) {
+        return
+      }
       setError(requestError.message)
     } finally {
-      setIsCreatingFrontModel(false)
+      if (isCreatorModeActive(modeScope)) {
+        setIsCreatingFrontModel(false)
+      }
     }
   }
 
   const handleCreateFrontBackModel = async () => {
+    const modeScope = creatorMode
     const frontImageDataUrl = multiviewResult?.views?.front?.imageDataUrl
     const backImageDataUrl = multiviewResult?.views?.back?.imageDataUrl
 
@@ -2822,15 +3040,22 @@ function App() {
         pbr: devSettings.tripoPbr,
         faceLimit: resolvedTripoFaceLimit,
       })
+      assertCreatorModeActive(modeScope)
       updateModelPreviewMode('apose')
       applyTripoTaskStart(result, {
         animationMode: 'static',
         fallbackTaskType: 'multiview_to_model',
+        modeScope,
       })
     } catch (requestError) {
+      if (isModeScopeAbortError(requestError)) {
+        return
+      }
       setError(requestError.message)
     } finally {
-      setIsCreatingFrontBackModel(false)
+      if (isCreatorModeActive(modeScope)) {
+        setIsCreatingFrontBackModel(false)
+      }
     }
   }
 
@@ -2842,13 +3067,17 @@ function App() {
       acceptSuccessWithoutExpectedOutput = false,
       timeoutMs = AUTO_PIPELINE_POLL_TIMEOUT_MS,
       timeoutMessage = 'Timed out waiting for the 3D task to finish.',
+      modeScope = creatorMode,
     } = {},
   ) => {
+    assertCreatorModeActive(modeScope)
     const normalizedRequestedAnimations = normalizeRequestedAnimations(requestedAnimations)
     const startedAt = Date.now()
 
     while (Date.now() - startedAt < timeoutMs) {
+      assertCreatorModeActive(modeScope)
       const nextJob = await refreshTripoJob(taskId, animationMode)
+      assertCreatorModeActive(modeScope)
       const normalizedJob = {
         ...nextJob,
         requestedAnimations:
@@ -2857,7 +3086,7 @@ function App() {
             : normalizedRequestedAnimations,
       }
 
-      applyTripoJobUpdate(normalizedJob)
+      applyTripoJobUpdate(normalizedJob, currentRunId, modeScope)
 
       const normalizedStatus = String(normalizedJob.status || '').trim().toLowerCase()
       if (normalizedStatus === 'failed') {
@@ -2885,7 +3114,10 @@ function App() {
     textureQuality = devSettings.tripoTextureQuality,
     pbr = devSettings.tripoPbr,
     faceLimit = resolvedTripoFaceLimit,
+    modeScope = creatorMode,
   } = {}) => {
+    assertCreatorModeActive(modeScope)
+
     if (!multiviewResult?.views) {
       throw new Error('Generate the turnaround views before creating the 3D model.')
     }
@@ -2911,10 +3143,12 @@ function App() {
         pbr,
         faceLimit,
       })
+      assertCreatorModeActive(modeScope)
       updateModelPreviewMode('apose')
       applyTripoTaskStart(result, {
         animationMode: 'static',
         fallbackTaskType: 'multiview_to_model',
+        modeScope,
       })
       if (result?.taskId) {
         startPendingTaskTiming(result.taskId, 'generate3d', startedAt)
@@ -2923,6 +3157,9 @@ function App() {
       }
       return result
     } catch (requestError) {
+      if (isModeScopeAbortError(requestError)) {
+        throw requestError
+      }
       const nextError = sanitizeProviderNames(
         requestError?.message || 'Failed to start 3D model generation.',
       )
@@ -2930,11 +3167,18 @@ function App() {
       recordTaskTiming('generate3d', startedAt, 'failed')
       throw new Error(nextError)
     } finally {
-      setIsCreatingModel(false)
+      if (isCreatorModeActive(modeScope)) {
+        setIsCreatingModel(false)
+      }
     }
   }
 
-  const submitStep03AutoRigTask = async (sourceTaskId = step03TaskState.modelTaskId) => {
+  const submitStep03AutoRigTask = async (
+    sourceTaskId = step03TaskState.modelTaskId,
+    modeScope = creatorMode,
+  ) => {
+    assertCreatorModeActive(modeScope)
+
     if (!sourceTaskId) {
       throw new Error('Generate 3D successfully before running AutoRig.')
     }
@@ -2953,11 +3197,13 @@ function App() {
 
     try {
       const result = await createTripoRigTask(sourceTaskId)
+      assertCreatorModeActive(modeScope)
       updateModelPreviewMode('apose')
       applyTripoTaskStart(result, {
         animationMode: 'static',
         fallbackTaskType: 'animate_rig',
         fallbackSourceTaskId: sourceTaskId,
+        modeScope,
       })
       if (result?.taskId) {
         startPendingTaskTiming(result.taskId, 'autorig', startedAt)
@@ -2966,19 +3212,27 @@ function App() {
       }
       return result
     } catch (requestError) {
+      if (isModeScopeAbortError(requestError)) {
+        throw requestError
+      }
       const nextError = sanitizeProviderNames(requestError?.message || 'Failed to start AutoRig.')
       setError(nextError)
       recordTaskTiming('autorig', startedAt, 'failed')
       throw new Error(nextError)
     } finally {
-      setIsCreatingRigTask(false)
+      if (isCreatorModeActive(modeScope)) {
+        setIsCreatingRigTask(false)
+      }
     }
   }
 
   const submitStep03AnimateTask = async ({
     sourceTaskId = step03TaskState.rigTaskId,
     requestedAnimations = configuredRetargetAnimations,
+    modeScope = creatorMode,
   } = {}) => {
+    assertCreatorModeActive(modeScope)
+
     if (!sourceTaskId) {
       throw new Error('Run AutoRig successfully before starting animation.')
     }
@@ -2997,12 +3251,14 @@ function App() {
       const result = await createTripoRetargetTask(sourceTaskId, {
         animations: normalizedRequestedAnimations,
       })
+      assertCreatorModeActive(modeScope)
       updateModelPreviewMode(configuredAnimationPreviewKey)
       applyTripoTaskStart(result, {
         animationMode: 'animated',
         fallbackTaskType: 'animate_retarget',
         fallbackSourceTaskId: sourceTaskId,
         requestedAnimations: normalizedRequestedAnimations,
+        modeScope,
       })
       if (result?.taskId) {
         startPendingTaskTiming(result.taskId, 'animate', startedAt)
@@ -3011,12 +3267,17 @@ function App() {
       }
       return result
     } catch (requestError) {
+      if (isModeScopeAbortError(requestError)) {
+        throw requestError
+      }
       const nextError = sanitizeProviderNames(requestError?.message || 'Failed to start animation.')
       setError(nextError)
       recordTaskTiming('animate', startedAt, 'failed')
       throw new Error(nextError)
     } finally {
-      setIsCreatingRetargetTask(false)
+      if (isCreatorModeActive(modeScope)) {
+        setIsCreatingRetargetTask(false)
+      }
     }
   }
 
@@ -3025,7 +3286,10 @@ function App() {
     aposeCaptureModelUrl = aposePreviewModelUrl,
     animationKeys = expectedAnimationOutputKeys,
     primaryAnimationKey = configuredAnimationPreviewKey,
+    modeScope = creatorMode,
   } = {}) => {
+    assertCreatorModeActive(modeScope)
+    const runInVehicleMode = resolveCreatorMode(modeScope) === CREATOR_MODE_VEHICLE
     setError('')
     const startedAt = Date.now()
     let generationStatus = 'failed'
@@ -3042,14 +3306,16 @@ function App() {
         throw new Error('A-pose model is unavailable for 360 capture.')
       }
 
-      const requestedAnimationKeys = Array.from(
-        new Set(
-          (Array.isArray(animationKeys) ? animationKeys : []).filter((animationKey) =>
-            Boolean(ANIMATION_PREVIEW_OPTION_BY_KEY[animationKey]),
-          ),
-        ),
-      )
-      if (requestedAnimationKeys.length === 0) {
+      const requestedAnimationKeys = runInVehicleMode
+        ? []
+        : Array.from(
+            new Set(
+              (Array.isArray(animationKeys) ? animationKeys : []).filter((animationKey) =>
+                Boolean(ANIMATION_PREVIEW_OPTION_BY_KEY[animationKey]),
+              ),
+            ),
+          )
+      if (!runInVehicleMode && requestedAnimationKeys.length === 0) {
         throw new Error('Animated model output is unavailable for sprite capture.')
       }
 
@@ -3058,16 +3324,43 @@ function App() {
         updateModelPreviewMode('apose')
       })
       await sleep(0)
+      assertCreatorModeActive(modeScope)
       const aposeCaptureApi = await waitForViewerModel('', 'apose')
+      assertCreatorModeActive(modeScope)
       if (!aposeCaptureApi?.captureEightViews) {
         throw new Error('3D viewer is not ready for A-pose 360 capture yet.')
       }
 
       const aposeCaptures = await aposeCaptureApi.captureEightViews()
+      assertCreatorModeActive(modeScope)
       const aposeDirections = await buildViewerSnapshotDirections(aposeCaptures, captureSize)
       const shared360Direction = buildSynthesized360Direction(aposeDirections)
       if (!shared360Direction) {
         throw new Error('A-pose 360 preview could not be created from the captured model views.')
+      }
+
+      if (runInVehicleMode) {
+        setDevSettings((currentValue) => ({
+          ...currentValue,
+          defaultSpritesEnabled: false,
+        }))
+        flushSync(() => {
+          updateModelPreviewMode('apose')
+        })
+        setSpritePreviewMode(SPRITE_360_PREVIEW_KEY)
+        setSpriteResult({
+          animation: SPRITE_360_PREVIEW_KEY,
+          spriteSize: captureSize,
+          directions: {
+            [SPRITE_360_PREVIEW_KEY]: shared360Direction,
+          },
+          sharedDirections: {
+            [SPRITE_360_PREVIEW_KEY]: shared360Direction,
+          },
+          animations: null,
+        })
+        generationStatus = 'success'
+        return
       }
 
       const nextAnimations = {}
@@ -3084,12 +3377,15 @@ function App() {
           updateModelPreviewMode(animationKey)
         })
         await sleep(0)
+        assertCreatorModeActive(modeScope)
         const captureApi = await waitForViewerModel(animationModelUrl, animationKey)
+        assertCreatorModeActive(modeScope)
         if (!captureApi?.captureAnimatedSpriteDirections) {
           throw new Error('3D viewer is not ready for animated sprite capture yet.')
         }
 
         const capturedDirections = await captureApi.captureAnimatedSpriteDirections()
+        assertCreatorModeActive(modeScope)
         const directionBundle = await buildViewerAnimationDirections(
           capturedDirections,
           captureSize,
@@ -3125,6 +3421,9 @@ function App() {
       })
       generationStatus = 'success'
     } catch (requestError) {
+      if (isModeScopeAbortError(requestError)) {
+        return
+      }
       const nextError = sanitizeProviderNames(
         requestError?.message || 'Failed to capture animated sprites.',
       )
@@ -3134,62 +3433,70 @@ function App() {
       })
       throw new Error(nextError)
     } finally {
-      isStep04PreviewCaptureRef.current = false
-      setIsGeneratingSprite(false)
-      setIsCapturingWalkSprites(false)
-      recordTaskTiming('generate25d', startedAt, generationStatus)
+      if (isCreatorModeActive(modeScope)) {
+        isStep04PreviewCaptureRef.current = false
+        setIsGeneratingSprite(false)
+        setIsCapturingWalkSprites(false)
+        recordTaskTiming('generate25d', startedAt, generationStatus)
+      }
     }
   }
 
   const handleGenerateStep03 = async () => {
+    const modeScope = creatorMode
     if (!canRunStep03Generation || isRunningAuto3dPipeline) {
       return
     }
 
     try {
-      await submitGenerateStep03Task()
+      await submitGenerateStep03Task({ modeScope })
     } catch {
       // Error state is already handled in the submit helper.
     }
   }
 
   const handleStep03AutoRig = async () => {
+    const modeScope = creatorMode
     if (!canRunStep03AutoRig || isRunningAuto3dPipeline) {
       return
     }
 
     try {
-      await submitStep03AutoRigTask()
+      await submitStep03AutoRigTask(step03TaskState.modelTaskId, modeScope)
     } catch {
       // Error state is already handled in the submit helper.
     }
   }
 
   const handleStep03Animate = async () => {
+    const modeScope = creatorMode
     if (!canRunStep03Animate || isRunningAuto3dPipeline) {
       return
     }
 
     try {
-      await submitStep03AnimateTask()
+      await submitStep03AnimateTask({ modeScope })
     } catch {
       // Error state is already handled in the submit helper.
     }
   }
 
   const handleGenerateStep04 = async () => {
+    const modeScope = creatorMode
     if (!canRunStep04Generation || isRunningAuto3dPipeline) {
       return
     }
 
     try {
-      await runStep04Generation()
+      await runStep04Generation({ modeScope })
     } catch {
       // Error state is already handled in the generation helper.
     }
   }
 
   const handleGenerateStep03Auto = async () => {
+    const modeScope = creatorMode
+    const runInVehicleMode = resolveCreatorMode(modeScope) === CREATOR_MODE_VEHICLE
     if (!canRunStep03AutoPipeline) {
       return
     }
@@ -3204,6 +3511,7 @@ function App() {
         textureQuality: AUTO_STEP03_TEXTURE_QUALITY,
         pbr: devSettings.tripoPbr,
         faceLimit: AUTO_STEP03_FACE_LIMIT,
+        modeScope,
       })
       if (!modelStart?.taskId) {
         throw new Error('Failed to start automatic 3D generation.')
@@ -3212,9 +3520,38 @@ function App() {
       const modelJob = await waitForTripoTaskCompletion(modelStart.taskId, {
         animationMode: 'static',
         timeoutMessage: 'Timed out while generating the 3D model.',
+        modeScope,
       })
 
-      const rigStart = await submitStep03AutoRigTask(modelJob.taskId)
+      if (runInVehicleMode) {
+        flushSync(() => {
+          applyTripoJobUpdate(modelJob, currentRunId, modeScope)
+          updatePipelineState((nextState) => {
+            nextState.approved.step3 = true
+            nextState.unlocked.step4 = true
+          })
+        })
+
+        const modelVariants = modelJob?.outputs?.variants || null
+        const modelAposeCaptureModelUrl = resolveAposeSourceModelUrl({
+          variantCatalog: modelVariants || {},
+          modelTaskId: modelJob?.taskId || step03TaskState.modelTaskId,
+          rigTaskId: '',
+          priority: APOSE_PREVIEW_MODEL_VARIANT_PRIORITY,
+        })
+
+        await sleep(0)
+        await runStep04Generation({
+          animatedJob: modelJob,
+          aposeCaptureModelUrl: modelAposeCaptureModelUrl,
+          animationKeys: [],
+          primaryAnimationKey: '',
+          modeScope,
+        })
+        return
+      }
+
+      const rigStart = await submitStep03AutoRigTask(modelJob.taskId, modeScope)
       if (!rigStart?.taskId) {
         throw new Error('Failed to start automatic rigging.')
       }
@@ -3223,11 +3560,13 @@ function App() {
         animationMode: 'static',
         acceptSuccessWithoutExpectedOutput: true,
         timeoutMessage: 'Timed out while rigging the 3D model.',
+        modeScope,
       })
 
       const animateStart = await submitStep03AnimateTask({
         sourceTaskId: rigJob.taskId,
         requestedAnimations,
+        modeScope,
       })
       if (!animateStart?.taskId) {
         throw new Error('Failed to start automatic animation.')
@@ -3237,10 +3576,11 @@ function App() {
         animationMode: 'animated',
         requestedAnimations,
         timeoutMessage: 'Timed out while generating animation outputs.',
+        modeScope,
       })
 
       flushSync(() => {
-        applyTripoJobUpdate(animatedJob)
+        applyTripoJobUpdate(animatedJob, currentRunId, modeScope)
         updatePipelineState((nextState) => {
           nextState.approved.step3 = true
           nextState.unlocked.step4 = true
@@ -3265,15 +3605,21 @@ function App() {
         aposeCaptureModelUrl: rigAposeCaptureModelUrl,
         animationKeys: autoAnimationKeys,
         primaryAnimationKey: autoAnimationKeys[0] || configuredAnimationPreviewKey,
+        modeScope,
       })
     } catch (requestError) {
+      if (isModeScopeAbortError(requestError)) {
+        return
+      }
       setError(
         sanitizeProviderNames(
           requestError?.message || 'Failed to complete the automatic 3D pipeline.',
         ),
       )
     } finally {
-      setIsRunningAuto3dPipeline(false)
+      if (isCreatorModeActive(modeScope)) {
+        setIsRunningAuto3dPipeline(false)
+      }
     }
   }
 
@@ -3298,7 +3644,11 @@ function App() {
         throw new Error('3D model output is missing for download.')
       }
 
-      if (!hasRequiredSpriteBundle(spriteResult, requiredSpriteAnimationKeys)) {
+      if (
+        !(isVehicleMode
+          ? hasRequiredVehicleSpriteBundle(spriteResult)
+          : hasRequiredSpriteBundle(spriteResult, requiredSpriteAnimationKeys))
+      ) {
         throw new Error('Sprite output is incomplete for download.')
       }
 
@@ -3350,6 +3700,35 @@ function App() {
         Number(spriteResult?.spriteSize) || 64,
       )
       spritesFolder?.file('360.gif', shared360Blob)
+
+      if (isVehicleMode) {
+        const spriteFramesFolder = spritesFolder?.folder('360_frames')
+        const sharedFrameDataUrls = Array.isArray(shared360Direction?.frameDataUrls)
+          ? shared360Direction.frameDataUrls.filter(Boolean)
+          : shared360Direction?.previewDataUrl
+            ? [shared360Direction.previewDataUrl]
+            : []
+        for (let frameIndex = 0; frameIndex < sharedFrameDataUrls.length; frameIndex += 1) {
+          const frameDataUrl = sharedFrameDataUrls[frameIndex]
+          const frameBase64 = dataUrlToBase64Payload(frameDataUrl)
+          if (!frameBase64) {
+            continue
+          }
+          const frameExtension = getDataUrlFileExtension(frameDataUrl)
+          const frameName = `frame_${String(frameIndex + 1).padStart(3, '0')}.${frameExtension}`
+          spriteFramesFolder?.file(frameName, frameBase64, { base64: true })
+        }
+
+        const bundleBlob = await zip.generateAsync({
+          type: 'blob',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 6 },
+        })
+        const runSuffix = currentRunId || tripoJob.taskId || Date.now()
+        downloadBlob(bundleBlob, `ww-character-${runSuffix}.zip`)
+        return
+      }
+
       const combinedAnimationRowsBlob = await buildCombinedAnimationRowsGifBlob({
         spritePayload: spriteResult,
         animationKeys: requiredSpriteAnimationKeys,
@@ -3568,14 +3947,14 @@ function App() {
     setIsResettingSession(true)
 
     try {
-      await clearPersistedSession()
+      await clearPersistedSession(creatorMode)
     } catch {
       // Best effort clear, continue resetting in-memory state.
     } finally {
       pendingTaskTimingByTaskIdRef.current.clear()
       setPrompt('')
       setReferenceImage(null)
-      setMultiviewPrompt(DEV_PRESETS.multiviewPreset)
+      setMultiviewPrompt(activeDevPresetProfile.multiviewPreset)
       setPortraitResult(null)
       setMultiviewResult(null)
       setSpriteResult(null)
@@ -3609,20 +3988,7 @@ function App() {
       setAnimateRigTaskIdInput('')
       setProgressBoundaries([...DEFAULT_PROGRESS_BOUNDARIES])
       setIsPreparingDownloadBundle(false)
-      setDevSettings({
-        portraitAspectRatio: DEV_PRESETS.portraitAspectRatio,
-        portraitPromptPreset: DEV_PRESETS.portraitPreset,
-        spriteSize: DEV_PRESETS.spriteSize,
-        tripoAnimationMode: DEV_PRESETS.tripoAnimationMode,
-        tripoPbr: DEV_PRESETS.tripoPbr,
-        tripoRetargetAnimations: DEV_PRESETS.tripoRetargetAnimations,
-        tripoRetargetAnimationName: DEV_PRESETS.tripoRetargetAnimationName,
-        tripoMeshQuality: DEV_PRESETS.tripoMeshQuality,
-        tripoTextureQuality: DEV_PRESETS.tripoTextureQuality,
-        tripoFaceLimit: DEV_PRESETS.tripoFaceLimit,
-        defaultSpritesEnabled: DEV_PRESETS.defaultSpritesEnabled,
-        viewerLook: DEV_PRESETS.viewerLook,
-      })
+      setDevSettings(buildDevSettingsFromPreset(activeDevPresetProfile))
       setIsResettingSession(false)
     }
   }
@@ -3832,47 +4198,176 @@ function App() {
     setDefaultSpritesCacheKey(Date.now())
   }
 
+  const handleCreatorModeChange = (nextCreatorMode) => {
+    const normalizedCreatorMode = resolveCreatorMode(nextCreatorMode)
+    if (normalizedCreatorMode === creatorMode) {
+      return
+    }
+
+    savePersistedSession(
+      {
+        creatorMode,
+        prompt,
+        multiviewPrompt,
+        devSettings,
+        portraitResult,
+        multiviewResult,
+        spriteResult,
+        currentRunId,
+        history,
+        tripoJob,
+        pipelineState,
+        step03TaskState,
+      },
+      creatorMode,
+    )
+
+    referenceImageByModeRef.current[creatorMode] = referenceImage || null
+
+    const nextPresetProfile = getDevPresetProfile(normalizedCreatorMode)
+    const nextSession = loadPersistedSession(normalizedCreatorMode)
+
+    creatorModeRef.current = normalizedCreatorMode
+    setCreatorMode(normalizedCreatorMode)
+    setPrompt(nextSession?.prompt || '')
+    setReferenceImage(referenceImageByModeRef.current[normalizedCreatorMode] || null)
+    setMultiviewPrompt(
+      resolveModeMultiviewPrompt(
+        normalizedCreatorMode,
+        nextSession?.multiviewPrompt,
+        nextPresetProfile.multiviewPreset,
+      ),
+    )
+    setDevSettings(buildDevSettingsFromPreset(nextPresetProfile, nextSession?.devSettings))
+    setPortraitResult(nextSession?.portraitResult?.imageDataUrl ? nextSession.portraitResult : null)
+    setMultiviewResult(nextSession?.multiviewResult?.views ? nextSession.multiviewResult : null)
+    setSpriteResult(
+      nextSession?.spriteResult?.animations || nextSession?.spriteResult?.directions
+        ? nextSession.spriteResult
+        : null,
+    )
+    setCurrentRunId(nextSession?.currentRunId || '')
+    setHistory(Array.isArray(nextSession?.history) ? nextSession.history : [])
+    const nextTripoJob = nextSession?.tripoJob || null
+    const hasNextTripoJob = Boolean(
+      nextTripoJob?.taskId ||
+        nextTripoJob?.outputs ||
+        (typeof nextTripoJob?.status === 'string' && nextTripoJob.status !== 'idle'),
+    )
+    setTripoJob(
+      hasNextTripoJob
+        ? {
+            ...EMPTY_JOB,
+            ...nextTripoJob,
+            animationMode:
+              normalizeAnimationMode(nextTripoJob?.animationMode) ||
+              normalizeAnimationMode(nextSession?.devSettings?.tripoAnimationMode),
+            requestedAnimations: normalizeRequestedAnimations(nextTripoJob?.requestedAnimations),
+          }
+        : EMPTY_JOB,
+    )
+    setStep03TaskState(mergeStep03TaskStateWithJob(nextSession?.step03TaskState, nextSession?.tripoJob))
+    setPipelineState(
+      derivePipelineStateFromArtifacts({
+        portraitResult: nextSession?.portraitResult || null,
+        multiviewResult: nextSession?.multiviewResult || null,
+        tripoJob: nextSession?.tripoJob || null,
+        spriteResult: nextSession?.spriteResult || null,
+        pipelineState: nextSession?.pipelineState || null,
+        step03TaskState: nextSession?.step03TaskState || null,
+      }),
+    )
+    pendingTaskTimingByTaskIdRef.current.clear()
+    setTaskTimings(createInitialTaskTimingState())
+    setError('')
+    setTurnaroundGenerationMode('')
+    setIsGeneratingPortrait(false)
+    setIsCreatingModel(false)
+    setIsCreatingFrontBackModel(false)
+    setIsCreatingFrontModel(false)
+    setIsCreatingPreRigCheckTask(false)
+    setIsCreatingRigTask(false)
+    setIsCreatingRetargetTask(false)
+    setIsGeneratingSprite(false)
+    setIsRunningAuto3dPipeline(false)
+    setIsRefreshingTripoJob(false)
+    setIsLoadingExistingTripoTask(false)
+    setModelViewPack(null)
+    setIsCapturingModelViews(false)
+    setIsCapturingWalkSprites(false)
+    setIsBuildingModelViewGif(false)
+    updateModelPreviewMode('apose')
+    setSpritePreviewMode(DEFAULT_SPRITE_PREVIEW_KEY)
+    setDefaultSpritesCacheKey(Date.now())
+    setExistingTripoTaskIdInput('')
+    setAnimateRigTaskIdInput('')
+    setProgressBoundaries([...DEFAULT_PROGRESS_BOUNDARIES])
+    setIsPreparingDownloadBundle(false)
+  }
+
   return (
     <div className="page-shell">
       <div className="page-backdrop" aria-hidden="true" />
       <main className="workspace-shell">
         <header className="status-bar status-progress" aria-label="Pipeline progress">
-          <div
-            className="status-progress__track"
-            ref={statusProgressTrackRef}
-            role="progressbar"
-            aria-label="Pipeline step progress"
-            aria-valuemin={1}
-            aria-valuemax={4}
-            aria-valuenow={currentStepIndex}
-          >
+          <div className="status-progress__layout">
+            <div className="creator-mode-switch" role="tablist" aria-label="Generation type tabs">
+              <button
+                type="button"
+                role="tab"
+                className="creator-mode-switch__button"
+                aria-selected={creatorMode === CREATOR_MODE_CHARACTER}
+                onClick={() => handleCreatorModeChange(CREATOR_MODE_CHARACTER)}
+              >
+                Character
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className="creator-mode-switch__button"
+                aria-selected={creatorMode === CREATOR_MODE_VEHICLE}
+                onClick={() => handleCreatorModeChange(CREATOR_MODE_VEHICLE)}
+              >
+                Vechicle
+              </button>
+            </div>
             <div
-              className="status-progress__fill"
-              style={{ width: progressFillWidth }}
-              data-testid="status-progress-fill"
-              data-step-index={currentStepIndex}
-            />
-            <div className="status-progress__content">
-              <p className="status-progress__inline status-progress__inline--left">
-                <span className="status-progress__label">Status:</span> {currentPipelineState}
-              </p>
-              <p className="status-progress__inline status-progress__inline--right">
-                <span className="status-progress__label">Message:</span> {topBarMessage}
-              </p>
+              className="status-progress__track"
+              ref={statusProgressTrackRef}
+              role="progressbar"
+              aria-label="Pipeline step progress"
+              aria-valuemin={1}
+              aria-valuemax={4}
+              aria-valuenow={currentStepIndex}
+            >
+              <div
+                className="status-progress__fill"
+                style={{ width: progressFillWidth }}
+                data-testid="status-progress-fill"
+                data-step-index={currentStepIndex}
+              />
+              <div className="status-progress__content">
+                <p className="status-progress__inline status-progress__inline--left">
+                  <span className="status-progress__label">Status:</span> {currentPipelineState}
+                </p>
+                <p className="status-progress__inline status-progress__inline--right">
+                  <span className="status-progress__label">Message:</span> {topBarMessage}
+                </p>
+              </div>
             </div>
           </div>
         </header>
 
-        <section className="workspace-grid workspace-grid--screenshot">
+        <section className={`workspace-grid workspace-grid--screenshot workspace-grid--${creatorMode}`}>
           <section
             className="panel-card workspace-slot workspace-slot--portrait workspace-portrait"
-            aria-label="Step 01 Portrait Panel"
+            aria-label={activeWorkspacePanelProfile.step01AriaLabel}
             ref={step01PanelRef}
           >
             <div className="panel-heading-shell">
               <div className="section-heading">
-                <p className="step-label">Step 01</p>
-                <h2>Portrait</h2>
+                <p className="step-label">{activeWorkspacePanelProfile.step01Label}</p>
+                <h2>{activeWorkspacePanelProfile.step01Title}</h2>
               </div>
             </div>
             <PortraitReviewCard portraitResult={portraitResult} embedded />
@@ -3885,6 +4380,11 @@ function App() {
                 onReferenceImageChange={setReferenceImage}
                 onGeneratePortrait={handleGeneratePortrait}
                 isGeneratingPortrait={isGeneratingPortrait}
+                promptLabel={activeWorkspacePanelProfile.step01PromptLabel}
+                promptPlaceholder={activeWorkspacePanelProfile.step01PromptPlaceholder}
+                generateButtonLabel={activeWorkspacePanelProfile.step01GenerateLabel}
+                generatingButtonLabel={activeWorkspacePanelProfile.step01GeneratingLabel}
+                generateButtonAriaLabel={activeWorkspacePanelProfile.step01GenerateAriaLabel}
               />
             </div>
           </section>
@@ -3892,13 +4392,13 @@ function App() {
           <section className="panel-card workspace-stage" aria-label="Center Stage Panel">
             <section
               className="workspace-stage__multiview"
-              aria-label="Step 02 Multiview Panel"
+              aria-label={activeWorkspacePanelProfile.step02AriaLabel}
               ref={step02PanelRef}
             >
               <div className="panel-heading-shell">
                 <div className="section-heading">
-                  <p className="step-label">Step 02</p>
-                  <h2>Multiview</h2>
+                  <p className="step-label">{activeWorkspacePanelProfile.step02Label}</p>
+                  <h2>{activeWorkspacePanelProfile.step02Title}</h2>
                 </div>
               </div>
               <div className="workspace-stage__multiview-body">
@@ -3915,39 +4415,43 @@ function App() {
                   disabled={!canRunStep03AutoPipeline}
                   onClick={handleGenerateStep03Auto}
                 >
-                  {isRunningAuto3dPipeline ? 'Running 3D...' : 'Generate 3D'}
+                  {isRunningAuto3dPipeline
+                    ? activeWorkspacePanelProfile.step02Generating3dLabel
+                    : activeWorkspacePanelProfile.step02Generate3dLabel}
                 </button>
               </div>
             </section>
 
             <section
               className="workspace-stage__model"
-              aria-label="Step 03 3D Model Panel"
+              aria-label={activeWorkspacePanelProfile.step03AriaLabel}
               ref={step03BoundaryRef}
             >
               <div className="panel-heading-shell">
                 <div className="section-heading">
-                  <p className="step-label">Step 03</p>
-                  <h2>3D Model</h2>
+                  <p className="step-label">{activeWorkspacePanelProfile.step03Label}</p>
+                  <h2>{activeWorkspacePanelProfile.step03Title}</h2>
                 </div>
-                <div className="panel-heading-control">
-                  <label className="visually-hidden" htmlFor="step03-animation-select">
-                    3D model animation preview
-                  </label>
-                  <select
-                    id="step03-animation-select"
-                    className="panel-heading-select"
-                    value={modelPreviewMode}
-                    onChange={(event) => handleModelPreviewSelectionChange(event.target.value)}
-                    aria-label="3D model animation preview"
-                  >
-                    {step03PreviewOptions.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {!isVehicleMode ? (
+                  <div className="panel-heading-control">
+                    <label className="visually-hidden" htmlFor="step03-animation-select">
+                      {activeWorkspacePanelProfile.step03PreviewAriaLabel}
+                    </label>
+                    <select
+                      id="step03-animation-select"
+                      className="panel-heading-select"
+                      value={modelPreviewMode}
+                      onChange={(event) => handleModelPreviewSelectionChange(event.target.value)}
+                      aria-label={activeWorkspacePanelProfile.step03PreviewAriaLabel}
+                    >
+                      {step03PreviewOptions.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
               </div>
               <div className="workspace-viewer__viewport">
                 {activeModelUrl ? (
@@ -3978,36 +4482,39 @@ function App() {
 
           <section
             className="panel-card workspace-slot workspace-slot--sprite workspace-sprite"
-            aria-label="Step 04 Sprite Panel"
+            aria-label={activeWorkspacePanelProfile.step04AriaLabel}
           >
             <div className="panel-heading-shell">
               <div className="section-heading">
-                <p className="step-label">Step 04</p>
-                <h2>Sprite</h2>
+                <p className="step-label">{activeWorkspacePanelProfile.step04Label}</p>
+                <h2>{activeWorkspacePanelProfile.step04Title}</h2>
               </div>
-              <div className="panel-heading-control">
-                <label className="visually-hidden" htmlFor="step04-sprite-view-select">
-                  Sprite animation preview
-                </label>
-                <select
-                  id="step04-sprite-view-select"
-                  className="panel-heading-select"
-                  value={resolvedSpritePreviewMode}
-                  onChange={(event) => setSpritePreviewMode(event.target.value)}
-                  aria-label="Sprite animation preview"
-                >
-                  {step04PreviewOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {!isVehicleMode ? (
+                <div className="panel-heading-control">
+                  <label className="visually-hidden" htmlFor="step04-sprite-view-select">
+                    {activeWorkspacePanelProfile.step04PreviewAriaLabel}
+                  </label>
+                  <select
+                    id="step04-sprite-view-select"
+                    className="panel-heading-select"
+                    value={resolvedSpritePreviewMode}
+                    onChange={(event) => setSpritePreviewMode(event.target.value)}
+                    aria-label={activeWorkspacePanelProfile.step04PreviewAriaLabel}
+                  >
+                    {step04PreviewOptions.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
             </div>
             <div className="workspace-sprite__body">
               <SpriteGrid
                 directions={activeSpriteDirections}
                 displayMode={resolvedSpritePreviewMode}
+                show360FramesAsTiles={isVehicleMode}
                 embedded
               />
             </div>
@@ -4018,7 +4525,9 @@ function App() {
                 disabled={!canDownloadFinalBundle}
                 onClick={handleDownloadFinalBundle}
               >
-                {isPreparingDownloadBundle ? 'Preparing...' : 'Download'}
+                {isPreparingDownloadBundle
+                  ? activeWorkspacePanelProfile.step04PreparingDownloadLabel
+                  : activeWorkspacePanelProfile.step04DownloadLabel}
               </button>
             </div>
           </section>
@@ -4478,37 +4987,47 @@ function App() {
                 disabled={!canRunStep03AutoPipeline}
                 onClick={handleGenerateStep03Auto}
               >
-                {isRunningAuto3dPipeline ? 'Running 3D Auto...' : 'Generate 3D Auto'}
+                {isRunningAuto3dPipeline
+                  ? isVehicleMode
+                    ? 'Generating 3D...'
+                    : 'Running 3D Auto...'
+                  : isVehicleMode
+                    ? 'Generate 3D'
+                    : 'Generate 3D Auto'}
               </button>
             </div>
-            <div className="action-row action-row--compact action-row--dev">
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!canRunStep03Generation || isRunningAuto3dPipeline}
-                onClick={handleGenerateStep03}
-              >
-                {isCreatingModel ? 'Generating 3D...' : 'Generate 3D'}
-              </button>
-            </div>
-            <div className="action-row action-row--compact action-row--dev">
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!canRunStep03AutoRig || isRunningAuto3dPipeline}
-                onClick={handleStep03AutoRig}
-              >
-                {isCreatingRigTask ? 'Rigging...' : 'AutoRig'}
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!canRunStep03Animate || isRunningAuto3dPipeline}
-                onClick={handleStep03Animate}
-              >
-                {isCreatingRetargetTask ? 'Animating...' : 'Animate'}
-              </button>
-            </div>
+            {!isVehicleMode ? (
+              <div className="action-row action-row--compact action-row--dev">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={!canRunStep03Generation || isRunningAuto3dPipeline}
+                  onClick={handleGenerateStep03}
+                >
+                  {isCreatingModel ? 'Generating 3D...' : 'Generate 3D'}
+                </button>
+              </div>
+            ) : null}
+            {!isVehicleMode ? (
+              <div className="action-row action-row--compact action-row--dev">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={!canRunStep03AutoRig || isRunningAuto3dPipeline}
+                  onClick={handleStep03AutoRig}
+                >
+                  {isCreatingRigTask ? 'Rigging...' : 'AutoRig'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={!canRunStep03Animate || isRunningAuto3dPipeline}
+                  onClick={handleStep03Animate}
+                >
+                  {isCreatingRetargetTask ? 'Animating...' : 'Animate'}
+                </button>
+              </div>
+            ) : null}
             <div className="action-row action-row--compact action-row--dev">
               <button
                 type="button"
@@ -4570,16 +5089,20 @@ function App() {
                 Refresh Default Sprites
               </button>
             </div>
-            <div className="action-row action-row--compact action-row--dev">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={handleCaptureWalkSprites}
-                disabled={!activeModelUrl || isCapturingWalkSprites}
-              >
-                {isCapturingWalkSprites ? 'Capturing Selected Sprites...' : 'Capture Selected Sprites'}
-              </button>
-            </div>
+            {!isVehicleMode ? (
+              <div className="action-row action-row--compact action-row--dev">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleCaptureWalkSprites}
+                  disabled={!activeModelUrl || isCapturingWalkSprites}
+                >
+                  {isCapturingWalkSprites
+                    ? 'Capturing Selected Sprites...'
+                    : 'Capture Selected Sprites'}
+                </button>
+              </div>
+            ) : null}
             <div className="dev-panel__field">
               <span>Gemini</span>
               <div className="dev-panel__status">

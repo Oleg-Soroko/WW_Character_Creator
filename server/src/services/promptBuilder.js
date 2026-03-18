@@ -67,24 +67,40 @@ export const buildViewPrompt = ({ view, characterPrompt, multiviewPrompt }) => {
         ? 'BACK VIEW ONLY'
         : view === 'left'
           ? 'LEFT VIEW ONLY'
-          : view === 'right'
+        : view === 'right'
             ? 'RIGHT VIEW ONLY'
             : 'Side VIEW ONLY'
   const viewSpecificPrompt = basePrompt.replace(
-    /FRONT VIEW ONLY|BACK VIEW ONLY|LEFT VIEW ONLY|RIGHT VIEW ONLY|Side VIEW ONLY/gi,
+    /FRONT VIEW ONLY|BACK VIEW ONLY|LEFT VIEW ONLY|RIGHT VIEW ONLY|FRONT VIEW|BACK VIEW|LEFT VIEW|RIGHT VIEW|Side VIEW ONLY|Side VIEW/gi,
     specificViewLabel,
   )
 
+  const normalizedSubjectPrompt = `${String(basePrompt || '')} ${String(characterPrompt || '')}`.toLowerCase()
+  const isVehicleSubject =
+    /\b(vehicle|car|truck|suv|van|motorcycle|bike|boat|ship|aircraft|helicopter|drone)\b/.test(
+      normalizedSubjectPrompt,
+    )
+
   const directionalConstraint =
-    view === 'left'
-      ? 'Character-left profile only. Head and toes point to the left side of the image.'
-      : view === 'right'
-        ? "Character-right profile only. This is the character's RIGHT side."
-        : view === 'front'
-          ? 'Character front view only.'
-          : view === 'back'
-            ? 'Character back view only.'
-            : ''
+    isVehicleSubject
+      ? view === 'left'
+        ? 'Vehicle-left profile only.'
+        : view === 'right'
+          ? "Vehicle-right profile only. This is the vehicle's RIGHT side."
+          : view === 'front'
+            ? 'Vehicle front view only.'
+            : view === 'back'
+              ? 'Vehicle back view only.'
+              : ''
+      : view === 'left'
+        ? 'Character-left profile only. Head and toes point to the left side of the image.'
+        : view === 'right'
+          ? "Character-right profile only. This is the character's RIGHT side."
+          : view === 'front'
+            ? 'Character front view only.'
+            : view === 'back'
+              ? 'Character back view only.'
+              : ''
 
   return `${viewSpecificPrompt.trim()} ${directionalConstraint}`.trim()
 }

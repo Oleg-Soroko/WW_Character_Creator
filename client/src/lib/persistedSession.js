@@ -15,9 +15,20 @@ orthographic, neutral A-pose, light grey seamless background, sharp focus, No we
 ])
 const ANIMATED_TASK_TYPES = new Set(['animate_retarget', 'animate_model'])
 const DEFAULT_RETARGET_ANIMATION_INPUT = 'preset:biped:walk preset:biped:run'
+const DEFAULT_CREATOR_MODE = 'character'
 
 const canUseStorage = () => typeof window !== 'undefined' && Boolean(window.localStorage)
 const canUseIndexedDb = () => typeof window !== 'undefined' && Boolean(window.indexedDB)
+const normalizeCreatorMode = (value) => (value === 'vehicle' ? 'vehicle' : DEFAULT_CREATOR_MODE)
+const normalizeSessionScope = (sessionScope) => String(sessionScope || '').trim().toLowerCase()
+const resolveStorageKey = (sessionScope = '') => {
+  const scope = normalizeSessionScope(sessionScope)
+  return scope ? `${STORAGE_KEY}:${scope}` : STORAGE_KEY
+}
+const resolveStoreKey = (sessionScope = '') => {
+  const scope = normalizeSessionScope(sessionScope)
+  return scope ? `${STORE_KEY}:${scope}` : STORE_KEY
+}
 
 const normalizeRequestedAnimations = (value) => {
   const sourceValues = Array.isArray(value) ? value : value ? [value] : []
@@ -397,19 +408,20 @@ const runTransaction = async (mode, executor) => {
   })
 }
 
-export const loadPersistedSession = () => {
+export const loadPersistedSession = (sessionScope = '') => {
   if (!canUseStorage()) {
     return null
   }
 
   try {
-    const rawValue = window.localStorage.getItem(STORAGE_KEY)
+    const rawValue = window.localStorage.getItem(resolveStorageKey(sessionScope))
     if (!rawValue) {
       return null
     }
 
     const parsed = JSON.parse(rawValue)
     return {
+      creatorMode: normalizeCreatorMode(parsed?.creatorMode),
       prompt: parsed?.prompt || '',
       multiviewPrompt: normalizeMultiviewPromptValue(parsed?.multiviewPrompt),
       devSettings: normalizeDevSettings(parsed?.devSettings),
@@ -429,10 +441,10 @@ export const loadPersistedSession = () => {
   }
 }
 
-export const loadPersistedRichSession = async () => {
+export const loadPersistedRichSession = async (sessionScope = '') => {
   try {
     const payload = await runTransaction('readonly', (store, resolve, reject) => {
-      const request = store.get(STORE_KEY)
+      const request = store.get(resolveStoreKey(sessionScope))
 
       request.onerror = () => reject(request.error)
       request.onsuccess = () => resolve(request.result || null)
@@ -443,6 +455,7 @@ export const loadPersistedRichSession = async () => {
     }
 
     return {
+      creatorMode: normalizeCreatorMode(payload.creatorMode),
       prompt: payload.prompt || '',
       multiviewPrompt: normalizeMultiviewPromptValue(payload.multiviewPrompt),
       devSettings: normalizeDevSettings(payload.devSettings),
@@ -466,19 +479,23 @@ export const loadPersistedRichSession = async () => {
   }
 }
 
-export const savePersistedSession = ({
-  prompt,
-  multiviewPrompt,
-  devSettings,
-  portraitResult,
-  multiviewResult,
-  spriteResult,
-  currentRunId,
-  history,
-  tripoJob,
-  pipelineState,
-  step03TaskState,
-}) => {
+export const savePersistedSession = (
+  {
+    creatorMode,
+    prompt,
+    multiviewPrompt,
+    devSettings,
+    portraitResult,
+    multiviewResult,
+    spriteResult,
+    currentRunId,
+    history,
+    tripoJob,
+    pipelineState,
+    step03TaskState,
+  },
+  sessionScope = '',
+) => {
   if (!canUseStorage()) {
     return Promise.resolve()
   }
@@ -497,6 +514,7 @@ export const savePersistedSession = ({
     : []
 
   const minimalPayload = {
+    creatorMode: normalizeCreatorMode(creatorMode),
     currentRunId: currentRunId || '',
     history: sanitizedHistory,
     tripoJob: normalizeTripoJob(tripoJob),
@@ -505,6 +523,7 @@ export const savePersistedSession = ({
   }
 
   const richPayload = {
+    creatorMode: normalizeCreatorMode(creatorMode),
     prompt: prompt || '',
     multiviewPrompt: multiviewPrompt || '',
     devSettings: normalizeDevSettings(devSettings),
@@ -519,14 +538,15 @@ export const savePersistedSession = ({
   }
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(richPayload))
+    window.localStorage.setItem(resolveStorageKey(sessionScope), JSON.stringify(richPayload))
   } catch {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(minimalPayload))
+    window.localStorage.setItem(resolveStorageKey(sessionScope), JSON.stringify(minimalPayload))
   }
 
   return runTransaction('readwrite', (store, resolve, reject) => {
     const request = store.put(
       {
+        creatorMode: normalizeCreatorMode(creatorMode),
         prompt: prompt || '',
         multiviewPrompt: multiviewPrompt || '',
         devSettings: normalizeDevSettings(devSettings),
@@ -539,7 +559,7 @@ export const savePersistedSession = ({
         pipelineState: normalizePipelineState(pipelineState),
         step03TaskState: normalizeStep03TaskState(step03TaskState),
       },
-      STORE_KEY,
+      resolveStoreKey(sessionScope),
     )
 
     request.onerror = () => reject(request.error)
@@ -547,15 +567,15 @@ export const savePersistedSession = ({
   }).catch(() => {})
 }
 
-export const clearPersistedSession = () => {
+export const clearPersistedSession = (sessionScope = '') => {
   if (!canUseStorage()) {
     return Promise.resolve()
   }
 
-  window.localStorage.removeItem(STORAGE_KEY)
+  window.localStorage.removeItem(resolveStorageKey(sessionScope))
 
   return runTransaction('readwrite', (store, resolve, reject) => {
-    const request = store.delete(STORE_KEY)
+    const request = store.delete(resolveStoreKey(sessionScope))
 
     request.onerror = () => reject(request.error)
     request.onsuccess = () => resolve()

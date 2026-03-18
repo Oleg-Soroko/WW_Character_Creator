@@ -258,6 +258,32 @@ describe('promptBuilder', () => {
       }),
     ).toContain('LEFT VIEW ONLY')
   })
+
+  it('normalizes vehicle front-view prompt into view-specific prompts', () => {
+    const vehicleBasePrompt =
+      'One vehicle only, full vehicle in frame, front view, orthographic, neutral white seamless background'
+
+    const frontPrompt = buildViewPrompt({
+      view: 'front',
+      characterPrompt: 'retro coupe',
+      multiviewPrompt: vehicleBasePrompt,
+    })
+    const backPrompt = buildViewPrompt({
+      view: 'back',
+      characterPrompt: 'retro coupe',
+      multiviewPrompt: vehicleBasePrompt,
+    })
+    const leftPrompt = buildViewPrompt({
+      view: 'left',
+      characterPrompt: 'retro coupe',
+      multiviewPrompt: vehicleBasePrompt,
+    })
+
+    expect(frontPrompt).toContain('FRONT VIEW ONLY')
+    expect(backPrompt).toContain('BACK VIEW ONLY')
+    expect(leftPrompt).toContain('LEFT VIEW ONLY')
+    expect(leftPrompt).toContain('Vehicle-left profile only.')
+  })
 })
 
 describe('mirrorHorizontally', () => {
