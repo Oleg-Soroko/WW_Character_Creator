@@ -1,13 +1,13 @@
 # WW_Character_Creator
 
-WW_Character_Creator is a local web app for building game-ready assets from a text prompt and optional reference image, with separate Character and Vechicle tabs that keep independent sessions and defaults.
+WW_Character_Creator is a local web app for building game-ready assets from a text prompt and optional reference image, with separate Character and Vehicle tabs that keep independent sessions and defaults.
 
 The main flow is:
 
 1. `Generate 2D` creates the portrait and then automatically generates the full multiview set.
 2. `Generate 3D` runs the tab-specific 3D pipeline:
    Character: model -> auto-rig -> animation -> sprite output.
-   Vechicle: model -> 360 sprite capture (no animation pipeline).
+   Vehicle: model -> 360 sprite capture (no animation pipeline).
 3. `Download` exports the final bundle when the pipeline is complete.
 
 ## What It Does
@@ -18,7 +18,7 @@ The main flow is:
 - Runs auto-rigging and animation retargeting for Character mode.
 - Captures 2.5D sprites, including vehicle 360 frames shown as separate tiles.
 - Lets you inspect the model in a Three.js viewer with DEV look controls.
-- Keeps Character and Vechicle prompts, references, and pipeline state isolated per tab.
+- Keeps Character and Vehicle prompts, references, and pipeline state isolated per tab.
 - Exports a downloadable package containing the generated assets.
 
 ## Current Default Flow

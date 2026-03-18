@@ -159,7 +159,7 @@ const getDevPresetProfile = (creatorMode = DEFAULT_CREATOR_MODE) =>
 const BASE_WORKSPACE_PANEL_PROFILE = Object.freeze({
   step01AriaLabel: 'Step 01 Portrait Panel',
   step01Label: 'Step 01',
-  step01Title: 'Portrait',
+  step01Title: 'PFP',
   step01PromptLabel: 'Character prompt',
   step01PromptPlaceholder:
     'Stylized sci-fi ranger with ceramic shoulder plates, bright copper trims, soft freckles, calm expression...',
@@ -4328,7 +4328,7 @@ function App() {
                 aria-selected={creatorMode === CREATOR_MODE_VEHICLE}
                 onClick={() => handleCreatorModeChange(CREATOR_MODE_VEHICLE)}
               >
-                Vechicle
+                Vehicle
               </button>
             </div>
             <div

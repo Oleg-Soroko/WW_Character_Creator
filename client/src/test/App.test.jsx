@@ -1407,7 +1407,7 @@ describe('App', () => {
     ])
   })
 
-  it('switches Character and Vechicle tabs and loads mode-specific DEV defaults', async () => {
+  it('switches Character and Vehicle tabs and loads mode-specific DEV defaults', async () => {
     render(<App />)
     const user = userEvent.setup()
 
@@ -1423,9 +1423,9 @@ describe('App', () => {
     await user.type(portraitPresetField, 'custom profile')
     expect(portraitPresetField).toHaveValue('custom profile')
 
-    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+    await user.click(screen.getByRole('tab', { name: 'Vehicle' }))
 
-    expect(screen.getByRole('tab', { name: 'Vechicle' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Vehicle' })).toHaveAttribute('aria-selected', 'true')
     expect(portraitPresetField.value).toContain('Vehicle identity concept render')
     expect(multiviewPresetField.value).toContain('One vehicle only')
 
@@ -1435,7 +1435,7 @@ describe('App', () => {
     expect(portraitPresetField).toHaveValue('custom profile')
   })
 
-  it('keeps prompt and reference image isolated per Character and Vechicle sessions', async () => {
+  it('keeps prompt and reference image isolated per Character and Vehicle sessions', async () => {
     render(<App />)
     const user = userEvent.setup()
 
@@ -1452,7 +1452,7 @@ describe('App', () => {
       expect(screen.getByRole('button', { name: 'Change reference image' })).toBeInTheDocument(),
     )
 
-    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+    await user.click(screen.getByRole('tab', { name: 'Vehicle' }))
     expect(screen.getByLabelText('Character prompt')).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Upload reference image' })).toBeInTheDocument()
 
@@ -1462,25 +1462,25 @@ describe('App', () => {
     expect(screen.getByLabelText('Character prompt')).toHaveValue('character prompt value')
     expect(screen.getByRole('button', { name: 'Change reference image' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+    await user.click(screen.getByRole('tab', { name: 'Vehicle' }))
     expect(screen.getByLabelText('Character prompt')).toHaveValue('vehicle prompt value')
     expect(screen.getByRole('button', { name: 'Upload reference image' })).toBeInTheDocument()
   })
 
-  it('hides step 03 and step 04 animation selectors in Vechicle mode', async () => {
+  it('hides step 03 and step 04 animation selectors in Vehicle mode', async () => {
     render(<App />)
     const user = userEvent.setup()
 
     expect(within(getStep03Panel()).getByLabelText('3D model animation preview')).toBeInTheDocument()
     expect(within(getStep04Panel()).getByLabelText('Sprite animation preview')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+    await user.click(screen.getByRole('tab', { name: 'Vehicle' }))
 
     expect(within(getStep03Panel()).queryByLabelText('3D model animation preview')).toBeNull()
     expect(within(getStep04Panel()).queryByLabelText('Sprite animation preview')).toBeNull()
   })
 
-  it('hides AutoRig and Animate DEV actions in Vechicle mode', async () => {
+  it('hides AutoRig and Animate DEV actions in Vehicle mode', async () => {
     render(<App />)
     const user = userEvent.setup()
 
@@ -1488,14 +1488,14 @@ describe('App', () => {
     expect(getDevActionButton('AutoRig')).toBeInTheDocument()
     expect(getDevActionButton('Animate')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+    await user.click(screen.getByRole('tab', { name: 'Vehicle' }))
 
     expect(within(getDevPanel()).queryByRole('button', { name: 'AutoRig' })).toBeNull()
     expect(within(getDevPanel()).queryByRole('button', { name: 'Animate' })).toBeNull()
     expect(getDevActionButton('Generate 3D')).toBeInTheDocument()
   })
 
-  it('runs Vechicle Generate 3D as one model task and captures 360 direction frames', async () => {
+  it('runs Vehicle Generate 3D as one model task and captures 360 direction frames', async () => {
     createTripoTask.mockResolvedValue({ taskId: 'vehicle-model-task', status: 'queued' })
     getTripoTask.mockImplementation(async (taskId) => {
       if (taskId === 'vehicle-model-task') {
@@ -1514,7 +1514,7 @@ describe('App', () => {
     render(<App />)
     const user = userEvent.setup()
 
-    await user.click(screen.getByRole('tab', { name: 'Vechicle' }))
+    await user.click(screen.getByRole('tab', { name: 'Vehicle' }))
     await generatePfp(user)
     await openDevPanel(user)
     await user.click(getDevActionButton('Generate 3D'))
@@ -1532,7 +1532,7 @@ describe('App', () => {
     expect(within(step04Panel).getByText('Back')).toBeInTheDocument()
   })
 
-  it('renders 360 sprite frames as separate tiles in Vechicle mode', () => {
+  it('renders 360 sprite frames as separate tiles in Vehicle mode', () => {
     const frame1 = makeDataUrl('vehicle-360-f1')
     const frame2 = makeDataUrl('vehicle-360-f2')
     const frame3 = makeDataUrl('vehicle-360-f3')
